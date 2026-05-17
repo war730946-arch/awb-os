@@ -21,6 +21,7 @@ export default function BusinessDetailPage() {
   const [connectLoading, setConnectLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
   const [qrCode, setQrCode] = useState(null);
+  const [connectError, setConnectError] = useState('');
 
   useEffect(() => { load(); }, [id]);
 
@@ -51,10 +52,14 @@ export default function BusinessDetailPage() {
   async function handleConnect() {
     if (!phoneInput.trim()) return;
     setConnectLoading(true);
+    setQrCode(null);
+    setConnectError('');
     try {
       await connectWhatsApp(id, phoneInput);
       // Poll for QR code
+      let attempts = 0;
       const pollQr = setInterval(async () => {
+        attempts++;
         try {
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/businesses/${id}/qr`, {
             headers: { Authorization: `Bearer ${localStorage.getItem('awb_token')}` }
@@ -62,18 +67,22 @@ export default function BusinessDetailPage() {
           const data = await res.json();
           if (data.qr) {
             setQrCode(data.qr);
+            setConnectError('');
           }
           if (data.connected) {
             clearInterval(pollQr);
             setQrCode(null);
             load();
           }
+          // Timeout after 30 seconds
+          if (attempts > 15) {
+            clearInterval(pollQr);
+            setConnectError('Connection timeout. Make sure your phone has WhatsApp installed and try again.');
+          }
         } catch (_) {}
       }, 2000);
-      // Stop polling after 2 minutes
-      setTimeout(() => clearInterval(pollQr), 120000);
     } catch (err) {
-      alert(err.message);
+      setConnectError(err.message);
     } finally {
       setConnectLoading(false);
     }
@@ -157,8 +166,10 @@ export default function BusinessDetailPage() {
                   <p className="text-sm text-gray-500 mb-2">Scan this QR with WhatsApp:</p>
                   <img src={qrCode} alt="WhatsApp QR" className="mx-auto w-48 h-48" />
                   <p className="text-xs text-gray-400 mt-2">Open WhatsApp → Menu → Linked Devices → Link a Device</p>
-                  <Smartphone size={16} className="inline text-gray-400 mr-1" />
                 </div>
+              )}
+              {connectError && (
+                <p className="text-sm text-red-500 mt-2">{connectError}</p>
               )}
             </div>
           ) : (

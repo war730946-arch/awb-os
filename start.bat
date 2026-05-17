@@ -34,7 +34,7 @@ echo.
 echo    OPEN:    http://localhost:3000
 echo    BACKEND: http://localhost:3456
 echo.
-echo    Login:   final@demo.com
+echo    Login:   test@demo.com
 echo    Pass:    demo123
 echo.
 echo    Dono CMD windows KHULI rehne dena.

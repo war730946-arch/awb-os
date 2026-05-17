@@ -96,7 +96,7 @@ router.post('/:id/connect-whatsapp', async (req, res) => {
       return res.status(400).json({ error: 'Phone number required' });
     }
 
-    await db.updateBusiness(req.params.id, { phone_number });
+    await db.updateBusiness(req.params.id, { phone_number, whatsapp_qr: '', whatsapp_connected: false });
     await startBot(req.params.id, phone_number);
 
     res.json({ success: true, message: 'WhatsApp connection initiated' });

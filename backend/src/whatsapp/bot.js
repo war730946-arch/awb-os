@@ -54,14 +54,15 @@ async function startBot(businessId, phoneNumber) {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-      console.log(`❌ Connection closed for ${phoneNumber}. Reconnect: ${shouldReconnect}`);
+      console.log(`❌ Connection closed for ${phoneNumber}. Reconnect: ${shouldReconnect}`, lastDisconnect?.error?.message || '');
 
       if (shouldReconnect) {
+        console.log('🔄 Reconnecting in 5 seconds...');
         setTimeout(() => startBot(businessId, phoneNumber), 5000);
       } else {
         activeBots.delete(businessId);
         const { updateBusiness } = require('../database');
-        await updateBusiness(businessId, { whatsapp_connected: false });
+        await updateBusiness(businessId, { whatsapp_connected: false, whatsapp_qr: '' });
       }
     }
   });

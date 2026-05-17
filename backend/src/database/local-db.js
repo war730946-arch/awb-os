@@ -183,10 +183,11 @@ function getUserBusinesses(userId) {
 
 function createBusiness(data) {
   const id = uuid();
-  execute(`INSERT INTO businesses (id, user_id, name, type, description, location, working_hours, services, faqs)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  execute(`INSERT INTO businesses (id, user_id, name, type, description, location, phone_number, working_hours, services, faqs)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, data.user_id, data.name, data.type || 'general', data.description || '',
-     data.location || '', data.working_hours || '9:00 AM - 6:00 PM',
+     data.location || '', data.phone_number || '',
+     data.working_hours || '9:00 AM - 6:00 PM',
      JSON.stringify(data.services || []), JSON.stringify(data.faqs || [])]);
 
   execute(`INSERT INTO ai_settings (id, business_id, personality, tone, language, custom_rules, greeting_message)
