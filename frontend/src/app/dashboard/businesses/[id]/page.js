@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Wifi, WifiOff, MessageSquare, Users, Edit3, Save } from 'lucide-react';
+import { ArrowLeft, Wifi, WifiOff, MessageSquare, Users, Edit3, Save, Smartphone } from 'lucide-react';
 import { getBusiness, updateBusiness, connectWhatsApp, disconnectWhatsApp, getMessages, getSubscription } from '../../../../lib/api';
 
 export default function BusinessDetailPage() {
@@ -20,6 +20,7 @@ export default function BusinessDetailPage() {
   const [phoneInput, setPhoneInput] = useState('');
   const [connectLoading, setConnectLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [qrCode, setQrCode] = useState(null);
 
   useEffect(() => { load(); }, [id]);
 
@@ -52,7 +53,25 @@ export default function BusinessDetailPage() {
     setConnectLoading(true);
     try {
       await connectWhatsApp(id, phoneInput);
-      load();
+      // Poll for QR code
+      const pollQr = setInterval(async () => {
+        try {
+          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/businesses/${id}/qr`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('awb_token')}` }
+          });
+          const data = await res.json();
+          if (data.qr) {
+            setQrCode(data.qr);
+          }
+          if (data.connected) {
+            clearInterval(pollQr);
+            setQrCode(null);
+            load();
+          }
+        } catch (_) {}
+      }, 2000);
+      // Stop polling after 2 minutes
+      setTimeout(() => clearInterval(pollQr), 120000);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -133,6 +152,14 @@ export default function BusinessDetailPage() {
               <button onClick={handleConnect} disabled={connectLoading} className="btn-primary w-full text-sm">
                 {connectLoading ? 'Connecting...' : 'Connect WhatsApp'}
               </button>
+              {qrCode && (
+                <div className="mt-4 text-center">
+                  <p className="text-sm text-gray-500 mb-2">Scan this QR with WhatsApp:</p>
+                  <img src={qrCode} alt="WhatsApp QR" className="mx-auto w-48 h-48" />
+                  <p className="text-xs text-gray-400 mt-2">Open WhatsApp → Menu → Linked Devices → Link a Device</p>
+                  <Smartphone size={16} className="inline text-gray-400 mr-1" />
+                </div>
+              )}
             </div>
           ) : (
             <button onClick={handleDisconnect} className="btn-danger w-full text-sm">

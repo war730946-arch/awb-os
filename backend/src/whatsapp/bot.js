@@ -37,7 +37,7 @@ async function startBot(businessId, phoneNumber) {
       console.log(`\n📱 QR Code for Business ${businessId} (${phoneNumber})`);
       console.log('Scan with WhatsApp to connect!\n');
       const { updateBusiness } = require('../database');
-      await updateBusiness(businessId, { whatsapp_qr: 'QR generated' });
+      await updateBusiness(businessId, { whatsapp_qr: qr, whatsapp_connected: false });
     }
 
     if (connection === 'open') {

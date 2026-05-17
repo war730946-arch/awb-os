@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const businessRoutes = require('./routes/businesses');
 const messageRoutes = require('./routes/messages');
 const subscriptionRoutes = require('./routes/subscriptions');
+const paymentRoutes = require('./routes/payments');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +27,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/businesses', businessRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/payments', paymentRoutes);
 
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);

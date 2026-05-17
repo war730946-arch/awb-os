@@ -1,4 +1,5 @@
 const express = require('express');
+const qrcode = require('qrcode');
 const { authenticate } = require('../middleware/auth');
 const { startBot, stopBot, getBotStatus } = require('../../whatsapp/bot');
 const db = require('../../database');
@@ -111,6 +112,22 @@ router.post('/:id/disconnect-whatsapp', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to disconnect' });
+  }
+});
+
+router.get('/:id/qr', async (req, res) => {
+  try {
+    const business = await db.getBusinessById(req.params.id);
+    if (!business || business.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    if (!business.whatsapp_qr) {
+      return res.json({ qr: null, connected: business.whatsapp_connected });
+    }
+    const qrImage = await qrcode.toDataURL(business.whatsapp_qr);
+    res.json({ qr: qrImage, connected: business.whatsapp_connected });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get QR code' });
   }
 });
 
