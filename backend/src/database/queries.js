@@ -226,6 +226,38 @@ async function getBusinessLeads(businessId) {
   return data;
 }
 
+async function checkCanRespond(businessId, userNumber) {
+  const sub = await getSubscription(businessId);
+  if (!sub) return { allowed: false, reason: 'no_subscription' };
+
+  if (sub.status === 'active') return { allowed: true, reason: 'active' };
+
+  if (sub.status === 'trial') {
+    const now = new Date();
+    const trialEnd = new Date(sub.trial_end_date);
+    if (trialEnd > now) {
+      const { count, error } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('business_id', businessId)
+        .eq('user_number', userNumber)
+        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      const msgCount = count || 0;
+      const maxMessages = 3;
+      if (msgCount >= maxMessages) {
+        return { allowed: false, reason: 'limit_reached', max: maxMessages };
+      }
+      return { allowed: true, reason: 'limited', remaining: maxMessages - msgCount };
+    }
+    await supabase.from('subscriptions')
+      .update({ status: 'expired' })
+      .eq('business_id', businessId);
+    return { allowed: false, reason: 'expired' };
+  }
+
+  return { allowed: false, reason: 'blocked' };
+}
+
 module.exports = {
   getBusinessByPhone,
   getBusinessById,
@@ -243,5 +275,6 @@ module.exports = {
   getSubscription,
   isSubscriptionActive,
   createLead,
-  getBusinessLeads
+  getBusinessLeads,
+  checkCanRespond
 };

@@ -4,7 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const db = require('../../database');
 
 function getBotModule() {
-  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+  if (process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME) {
     return { startBot: () => {}, stopBot: () => {}, getBotStatus: () => false };
   }
   try {

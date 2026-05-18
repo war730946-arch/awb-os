@@ -14,7 +14,10 @@ async function startBot(businessId, phoneNumber) {
     return activeBots.get(businessId);
   }
 
-  const authDir = path.join(__dirname, `../../auth_info_${businessId}`);
+  const isCloud = !!(process.env.RAILWAY_PUBLIC_DOMAIN || process.env.VERCEL || process.env.RENDER_EXTERNAL_URL);
+  const authDir = isCloud
+    ? path.join('/tmp', `auth_info_${businessId}`)
+    : path.join(__dirname, `../../auth_info_${businessId}`);
   if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -111,7 +114,14 @@ async function startBot(businessId, phoneNumber) {
         const buffer = await sock.downloadMediaMessage(message);
         const result = await processVoice(buffer);
         if (result.success) userText = result.text;
-        else userText = '';
+        else {
+          if (result.error === 'Whisper not installed') {
+            await sock.sendMessage(message.key.remoteJid, {
+              text: '🎵 Voice transcription is not available. Please send a text message.'
+            });
+          }
+          userText = '';
+        }
       } catch (err) {
         console.error('Voice download error:', err);
       }

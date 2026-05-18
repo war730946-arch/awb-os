@@ -8,13 +8,18 @@ const WHISPER_MODEL = process.env.WHISPER_MODEL || './whisper.cpp/models/ggml-ba
 
 async function processVoice(audioBuffer, format = 'ogg') {
   const tempId = uuidv4();
-  const tempDir = path.join(__dirname, '../../temp');
+  const tempDir = path.join('/tmp', 'awb-voice');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
   const inputPath = path.join(tempDir, `${tempId}.${format}`);
   const outputPath = path.join(tempDir, `${tempId}.txt`);
 
   try {
+    if (!fs.existsSync(WHISPER_PATH)) {
+      console.log('Whisper binary not found, voice transcription unavailable');
+      return { text: '', success: false, error: 'Whisper not installed' };
+    }
+
     fs.writeFileSync(inputPath, audioBuffer);
 
     await new Promise((resolve, reject) => {
@@ -36,7 +41,9 @@ async function processVoice(audioBuffer, format = 'ogg') {
     };
 
   } catch (error) {
-    console.error('Voice processing error:', error);
+    if (error.message !== 'Whisper not installed') {
+      console.error('Voice processing error:', error);
+    }
     return {
       text: '',
       success: false,

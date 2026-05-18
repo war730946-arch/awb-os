@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["nodejs", "openssh"]
+
+[phases.install]
+cmds = ["npm install"]
+
+[deploy]
+startCommand = "node src/index.js"
