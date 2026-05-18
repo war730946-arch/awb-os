@@ -25,6 +25,22 @@ export default function BusinessDetailPage() {
 
   useEffect(() => { load(); }, [id]);
 
+  // Background QR refresh: poll every 5 seconds if not connected
+  useEffect(() => {
+    if (!id || loading) return;
+    const interval = setInterval(async () => {
+      try {
+        const data = await fetchBusinessQr(id);
+        if (data.qr) setQrCode(data.qr);
+        if (data.connected) {
+          clearInterval(interval);
+          load();
+        }
+      } catch (_) {}
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [id, loading]);
+
   async function load() {
     try {
       const [bRes, mRes, sRes] = await Promise.all([
@@ -42,6 +58,14 @@ export default function BusinessDetailPage() {
         location: bRes.business.location || '',
         working_hours: bRes.business.working_hours || '',
       });
+      setPhoneInput(bRes.business.phone_number || '');
+      // Auto-check for existing QR code
+      try {
+        const qrData = await fetchBusinessQr(id);
+        if (qrData.qr) {
+          setQrCode(qrData.qr);
+        }
+      } catch (_) {}
     } catch (err) {
       console.error(err);
     } finally {
