@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Wifi, WifiOff, MessageSquare, Users, Edit3, Save, Smartphone } from 'lucide-react';
-import { getBusiness, updateBusiness, connectWhatsApp, disconnectWhatsApp, getMessages, getSubscription } from '../../../../lib/api';
+import { getBusiness, updateBusiness, connectWhatsApp, disconnectWhatsApp, getMessages, getSubscription, fetchBusinessQr } from '../../../../lib/api';
 
 export default function BusinessDetailPage() {
   const { id } = useParams();
@@ -61,10 +61,7 @@ export default function BusinessDetailPage() {
       const pollQr = setInterval(async () => {
         attempts++;
         try {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/businesses/${id}/qr`, {
-            headers: { Authorization: `Bearer ${localStorage.getItem('awb_token')}` }
-          });
-          const data = await res.json();
+          const data = await fetchBusinessQr(id);
           if (data.qr) {
             setQrCode(data.qr);
             setConnectError('');
@@ -74,8 +71,8 @@ export default function BusinessDetailPage() {
             setQrCode(null);
             load();
           }
-          // Timeout after 30 seconds
-          if (attempts > 15) {
+          // Timeout after 60 seconds (30 attempts * 2s)
+          if (attempts > 30) {
             clearInterval(pollQr);
             setConnectError('Connection timeout. Make sure your phone has WhatsApp installed and try again.');
           }

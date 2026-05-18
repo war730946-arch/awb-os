@@ -60,6 +60,9 @@ router.post('/', async (req, res) => {
     res.status(201).json({ business });
   } catch (error) {
     console.error('Create business error:', error);
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Phone number already registered with another business. Please use a different number.' });
+    }
     res.status(500).json({ error: 'Failed to create business' });
   }
 });
@@ -111,6 +114,8 @@ router.post('/:id/connect-whatsapp', async (req, res) => {
     }
 
     await db.updateBusiness(req.params.id, { phone_number, whatsapp_qr: '', whatsapp_connected: false });
+    await getBotModule().stopBot(req.params.id);
+    await new Promise(r => setTimeout(r, 1000));
     await getBotModule().startBot(req.params.id, phone_number);
 
     res.json({ success: true, message: 'WhatsApp connection initiated' });

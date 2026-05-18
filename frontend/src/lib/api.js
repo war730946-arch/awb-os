@@ -1,5 +1,5 @@
-const rawUrl = process.env.NEXT_PUBLIC_API_URL || '';
-const API_BASE = rawUrl ? `${rawUrl}/api` : '/api';
+const RAW_URL = 'https://jubilant-hope-production-ccfa.up.railway.app';
+const API_BASE = `${RAW_URL}/api`;
 
 async function request(endpoint, options = {}) {
   const token = typeof window !== 'undefined' ? localStorage.getItem('awb_token') : null;
@@ -54,6 +54,14 @@ export const connectWhatsApp = (id, phone_number) =>
   request(`/businesses/${id}/connect-whatsapp`, { method: 'POST', body: JSON.stringify({ phone_number }) });
 export const disconnectWhatsApp = (id) =>
   request(`/businesses/${id}/disconnect-whatsapp`, { method: 'POST' });
+
+export const fetchBusinessQr = async (id) => {
+  const token = localStorage.getItem('awb_token');
+  const res = await fetch(`${API_BASE}/businesses/${id}/qr`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return res.json();
+};
 
 // Messages
 export const getMessages = (businessId, limit = 50) =>
