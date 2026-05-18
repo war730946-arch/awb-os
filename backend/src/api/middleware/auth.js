@@ -12,7 +12,11 @@ async function authenticate(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = db.getUserById ? db.getUserById(decoded.userId) : null;
+    let user = db.getUserById ? db.getUserById(decoded.userId) : null;
+
+    if (!user && decoded.email) {
+      user = db.getUserByEmail ? db.getUserByEmail(decoded.email) : null;
+    }
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' });

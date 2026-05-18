@@ -4,6 +4,9 @@ const { authenticate } = require('../middleware/auth');
 const db = require('../../database');
 
 function getBotModule() {
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    return { startBot: () => {}, stopBot: () => {}, getBotStatus: () => false };
+  }
   try {
     return require('../../whatsapp/bot');
   } catch {
@@ -46,8 +49,12 @@ router.post('/', async (req, res) => {
     const data = { ...req.body, user_id: req.user.id };
     const business = await db.createBusiness(data);
 
-    if (req.body.phone_number) {
-      await getBotModule().startBot(business.id, req.body.phone_number);
+    try {
+      if (req.body.phone_number) {
+        await getBotModule().startBot(business.id, req.body.phone_number);
+      }
+    } catch (botErr) {
+      console.error('Bot start skipped (expected on serverless):', botErr.message);
     }
 
     res.status(201).json({ business });

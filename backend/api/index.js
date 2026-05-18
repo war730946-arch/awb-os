@@ -30,8 +30,8 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/bot', botWebhookRoutes);
 
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error('Unhandled error:', err?.stack || err?.message || err);
+  res.status(500).json({ error: 'Internal server error', detail: process.env.NODE_ENV !== 'production' ? err?.message : undefined });
 });
 
 module.exports = app;

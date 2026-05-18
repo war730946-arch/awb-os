@@ -1,15 +1,21 @@
 let db;
 
-if (process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+if (process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME) {
   db = require('./memory-db');
   try { db.init(); } catch (err) { console.error('Memory DB init error:', err); }
-} else if (process.env.SUPABASE_URL) {
-  console.log('☁️ Using Supabase database');
+} else if (process.env.SUPABASE_URL && process.env.SUPABASE_URL.startsWith('http')) {
+  console.log('Using Supabase database');
   db = require('./queries');
 } else {
-  console.log('📦 Using local SQLite database');
-  db = require('./local-db');
-  db.init().catch(err => console.error('DB init error:', err));
+  console.log('Using local SQLite database');
+  try {
+    db = require('./local-db');
+    db.init().catch(err => console.error('DB init error:', err));
+  } catch (err) {
+    console.error('Local DB load failed, falling back to memory DB:', err.message);
+    db = require('./memory-db');
+    db.init();
+  }
 }
 
 module.exports = db;
