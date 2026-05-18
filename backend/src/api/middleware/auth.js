@@ -12,10 +12,10 @@ async function authenticate(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    let user = db.getUserById ? db.getUserById(decoded.userId) : null;
+    let user = db.getUserById ? await db.getUserById(decoded.userId) : null;
 
     if (!user && decoded.email) {
-      user = db.getUserByEmail ? db.getUserByEmail(decoded.email) : null;
+      user = db.getUserByEmail ? await db.getUserByEmail(decoded.email) : null;
     }
 
     if (!user) {
