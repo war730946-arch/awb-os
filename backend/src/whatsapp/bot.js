@@ -34,10 +34,7 @@ async function startBot(businessId, phoneNumber) {
     syncFullHistory: false,
     markOnlineOnConnect: true,
     connectTimeoutMs: 30000,
-    keepAliveIntervalMs: 25000,
-    generateHighQualityLink: true,
-    linkPreviewImage: false,
-    patch: true
+    keepAliveIntervalMs: 25000
   });
 
   sock.ev.on('creds.update', saveCreds);
