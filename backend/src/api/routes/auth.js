@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../../database');
@@ -15,14 +15,14 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    const existing = db.getUserByEmail ? db.getUserByEmail(email) : null;
+    const existing = db.getUserByEmail ? await db.getUserByEmail(email) : null;
 
     if (existing) {
       return res.status(409).json({ error: 'Email already registered' });
     }
 
     const password_hash = await bcrypt.hash(password, 10);
-    const user = db.createUser(email, password_hash, full_name);
+    const user = await db.createUser(email, password_hash, full_name);
 
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
@@ -41,7 +41,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    const user = db.getUserByEmail ? db.getUserByEmail(email) : null;
+    const user = db.getUserByEmail ? await db.getUserByEmail(email) : null;
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });

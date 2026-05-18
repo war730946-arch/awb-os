@@ -2,7 +2,8 @@ const path = require('path');
 const fs = require('fs');
 const initSqlJs = require('sql.js');
 
-const DB_DIR = path.join(__dirname, '../../data');
+const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
+const DB_DIR = isVercel ? '/tmp/data' : path.join(__dirname, '../../data');
 const DB_PATH = path.join(DB_DIR, 'awb-os.db');
 
 let db = null;

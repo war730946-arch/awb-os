@@ -98,6 +98,13 @@ async function startBot(businessId, phoneNumber) {
       userText = message.message.conversation;
     } else if (message.message.extendedTextMessage?.text) {
       userText = message.message.extendedTextMessage.text;
+    } else if (message.message.imageMessage) {
+      await sock.sendMessage(message.key.remoteJid, {
+        text: `📸 I received your image. I can't view images, but feel free to describe it or ask me something!`
+      });
+      return;
+    } else if (message.message.videoMessage) {
+      return;
     } else if (message.message.audioMessage) {
       isVoice = true;
       try {

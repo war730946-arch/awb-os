@@ -1,7 +1,6 @@
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
 const db = require('../../database');
-const Razorpay = require('razorpay');
 
 const router = express.Router();
 
@@ -29,6 +28,7 @@ router.post('/create-order', async (req, res) => {
       });
     }
 
+    const Razorpay = require('razorpay');
     const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
     const order = await razorpay.orders.create({
       amount,
@@ -55,15 +55,11 @@ router.post('/verify', async (req, res) => {
     
     const keySecret = process.env.RAZORPAY_KEY_SECRET || 'placeholder';
 
+    const payAmount = plan === 'yearly' ? 499900 : 49900;
+
     // Dev/test mode: auto-verify
     if (keySecret === 'placeholder') {
-      const months = plan === 'yearly' ? 365 : 30;
-      db.execute(`UPDATE subscriptions SET 
-        plan = ?, status = 'active',
-        current_period_start = datetime('now'),
-        current_period_end = datetime('now', '+${months} days'),
-        updated_at = datetime('now')
-        WHERE business_id = ?`, [plan || 'monthly', businessId]);
+      await db.createSubscription(req.user.id, plan || 'monthly', payAmount, 'test_payment');
       return res.json({ success: true, message: 'Test payment: subscription activated!' });
     }
 
@@ -76,13 +72,7 @@ router.post('/verify', async (req, res) => {
       return res.status(400).json({ error: 'Invalid signature' });
     }
 
-    const months = plan === 'yearly' ? 365 : 30;
-    db.execute(`UPDATE subscriptions SET 
-      plan = ?, status = 'active', 
-      current_period_start = datetime('now'),
-      current_period_end = datetime('now', '+${months} days'),
-      updated_at = datetime('now')
-      WHERE business_id = ?`, [plan || 'monthly', businessId]);
+    await db.createSubscription(req.user.id, plan || 'monthly', payAmount, razorpay_order_id);
 
     res.json({ success: true, message: 'Payment verified, subscription activated!' });
   } catch (error) {

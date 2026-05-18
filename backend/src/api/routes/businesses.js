@@ -1,8 +1,15 @@
 const express = require('express');
 const qrcode = require('qrcode');
 const { authenticate } = require('../middleware/auth');
-const { startBot, stopBot, getBotStatus } = require('../../whatsapp/bot');
 const db = require('../../database');
+
+function getBotModule() {
+  try {
+    return require('../../whatsapp/bot');
+  } catch {
+    return { startBot: () => {}, stopBot: () => {}, getBotStatus: () => false };
+  }
+}
 
 const router = express.Router();
 
@@ -13,7 +20,7 @@ router.get('/', async (req, res) => {
     const businesses = await db.getUserBusinesses(req.user.id);
     const withStatus = businesses.map(b => ({
       ...b,
-      bot_active: getBotStatus(b.id)
+      bot_active: getBotModule().getBotStatus(b.id)
     }));
     res.json({ businesses: withStatus });
   } catch (error) {
@@ -27,7 +34,7 @@ router.get('/:id', async (req, res) => {
     if (!business || business.user_id !== req.user.id) {
       return res.status(404).json({ error: 'Business not found' });
     }
-    business.bot_active = getBotStatus(business.id);
+    business.bot_active = getBotModule().getBotStatus(business.id);
     res.json({ business });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch business' });
@@ -40,7 +47,7 @@ router.post('/', async (req, res) => {
     const business = await db.createBusiness(data);
 
     if (req.body.phone_number) {
-      await startBot(business.id, req.body.phone_number);
+      await getBotModule().startBot(business.id, req.body.phone_number);
     }
 
     res.status(201).json({ business });
@@ -76,7 +83,7 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Business not found' });
     }
 
-    await stopBot(req.params.id);
+    await getBotModule().stopBot(req.params.id);
     await db.deleteBusiness(req.params.id);
     res.json({ success: true });
   } catch (error) {
@@ -97,7 +104,7 @@ router.post('/:id/connect-whatsapp', async (req, res) => {
     }
 
     await db.updateBusiness(req.params.id, { phone_number, whatsapp_qr: '', whatsapp_connected: false });
-    await startBot(req.params.id, phone_number);
+    await getBotModule().startBot(req.params.id, phone_number);
 
     res.json({ success: true, message: 'WhatsApp connection initiated' });
   } catch (error) {
@@ -107,7 +114,7 @@ router.post('/:id/connect-whatsapp', async (req, res) => {
 
 router.post('/:id/disconnect-whatsapp', async (req, res) => {
   try {
-    await stopBot(req.params.id);
+    await getBotModule().stopBot(req.params.id);
     await db.updateBusiness(req.params.id, { whatsapp_connected: false, phone_number: '' });
     res.json({ success: true });
   } catch (error) {
