@@ -55,6 +55,9 @@ export const connectWhatsApp = (id, phone_number) =>
 export const disconnectWhatsApp = (id) =>
   request(`/businesses/${id}/disconnect-whatsapp`, { method: 'POST' });
 
+export const requestPairingCode = (id, phone_number) =>
+  request(`/businesses/${id}/pairing-code`, { method: 'POST', body: JSON.stringify({ phone_number }) });
+
 export const fetchBusinessQr = async (id) => {
   const token = localStorage.getItem('awb_token');
   const res = await fetch(`${API_BASE}/businesses/${id}/qr`, {

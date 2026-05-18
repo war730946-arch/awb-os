@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Wifi, WifiOff, MessageSquare, Users, Edit3, Save, Smartphone } from 'lucide-react';
-import { getBusiness, updateBusiness, connectWhatsApp, disconnectWhatsApp, getMessages, getSubscription, fetchBusinessQr } from '../../../../lib/api';
+import { getBusiness, updateBusiness, connectWhatsApp, disconnectWhatsApp, getMessages, getSubscription, fetchBusinessQr, requestPairingCode } from '../../../../lib/api';
 
 export default function BusinessDetailPage() {
   const { id } = useParams();
@@ -22,6 +22,8 @@ export default function BusinessDetailPage() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [qrCode, setQrCode] = useState(null);
   const [connectError, setConnectError] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
+  const [pairingLoading, setPairingLoading] = useState(false);
 
   useEffect(() => { load(); }, [id]);
 
@@ -109,6 +111,25 @@ export default function BusinessDetailPage() {
     }
   }
 
+  async function handlePairingCode() {
+    if (!phoneInput.trim()) return;
+    setPairingLoading(true);
+    setPairingCode('');
+    try {
+      await connectWhatsApp(id, phoneInput);
+      const res = await requestPairingCode(id, phoneInput);
+      if (res.success && res.code) {
+        setPairingCode(res.code);
+      } else {
+        setConnectError('Failed to get pairing code: ' + (res.error || 'unknown'));
+      }
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setPairingLoading(false);
+    }
+  }
+
   async function handleDisconnect() {
     try {
       await disconnectWhatsApp(id);
@@ -189,6 +210,19 @@ export default function BusinessDetailPage() {
                   <p className="text-xs text-gray-400 mt-2">Open WhatsApp → Menu → Linked Devices → Link a Device</p>
                 </div>
               )}
+              <div className="mt-2 pt-2 border-t border-gray-200">
+                <button onClick={handlePairingCode} disabled={pairingLoading} className="btn-secondary w-full text-sm flex items-center justify-center gap-2">
+                  <Smartphone size={14} />
+                  {pairingLoading ? 'Getting Code...' : 'Get Pairing Code (Alternative)'}
+                </button>
+                {pairingCode && (
+                  <div className="mt-3 text-center p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-gray-600 mb-1">Type this code in WhatsApp:</p>
+                    <p className="text-2xl font-bold text-blue-600 tracking-widest">{pairingCode}</p>
+                    <p className="text-xs text-gray-400 mt-2">WhatsApp → Settings → Linked Devices → Link with Phone Number</p>
+                  </div>
+                )}
+              </div>
               {connectError && (
                 <p className="text-sm text-red-500 mt-2">{connectError}</p>
               )}

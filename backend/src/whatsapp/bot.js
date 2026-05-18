@@ -159,6 +159,21 @@ async function startBot(businessId, phoneNumber) {
   return sock;
 }
 
+async function requestPairing(businessId, phoneNumber) {
+  if (activeBots.has(businessId)) {
+    const sock = activeBots.get(businessId);
+    try {
+      const code = await sock.requestPairingCode(phoneNumber);
+      console.log(`🔑 Pairing code for ${phoneNumber}: ${code}`);
+      return { success: true, code };
+    } catch (err) {
+      console.error('Pairing code error:', err.message);
+      return { success: false, error: err.message };
+    }
+  }
+  return { success: false, error: 'Bot not active' };
+}
+
 async function stopBot(businessId) {
   const sock = activeBots.get(businessId);
   if (sock) {
@@ -179,4 +194,4 @@ function getBotStatus(businessId) {
   return activeBots.has(businessId);
 }
 
-module.exports = { startBot, stopBot, sendMessage, getBotStatus };
+module.exports = { startBot, stopBot, sendMessage, getBotStatus, requestPairing };

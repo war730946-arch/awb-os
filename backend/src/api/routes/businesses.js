@@ -134,6 +134,25 @@ router.post('/:id/disconnect-whatsapp', async (req, res) => {
   }
 });
 
+router.post('/:id/pairing-code', async (req, res) => {
+  try {
+    const business = await db.getBusinessById(req.params.id);
+    if (!business || business.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    const { phone_number } = req.body;
+    if (!phone_number) {
+      return res.status(400).json({ error: 'Phone number required' });
+    }
+
+    const result = await getBotModule().requestPairing(req.params.id, phone_number);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get pairing code' });
+  }
+});
+
 router.get('/:id/qr', async (req, res) => {
   try {
     const business = await db.getBusinessById(req.params.id);
