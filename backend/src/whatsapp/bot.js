@@ -2,7 +2,7 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLat
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
-const { getBusinessByPhone, saveMessage, upsertCustomer, isSubscriptionActive, checkCanRespond, getSubscription, createLead } = require('../database');
+const { getBusinessByPhone, saveMessage, upsertCustomer, isSubscriptionActive, checkCanRespond, getSubscription, getCustomerMessages, createLead } = require('../database');
 const { generateResponse } = require('../ai/engine');
 const { processVoice } = require('../voice/processor');
 
@@ -142,7 +142,7 @@ async function startBot(businessId, phoneNumber) {
     if (!userText.trim()) return;
 
     const customer = await upsertCustomer(businessId, userPhone, '');
-    const history = [];
+    const history = await getCustomerMessages(businessId, userPhone, 10);
 
     const { reply, intent } = await generateResponse(business, userText, history);
 
