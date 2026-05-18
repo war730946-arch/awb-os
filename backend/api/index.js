@@ -18,12 +18,16 @@ const businessRoutes = require('../src/api/routes/businesses');
 const messageRoutes = require('../src/api/routes/messages');
 const subscriptionRoutes = require('../src/api/routes/subscriptions');
 const paymentRoutes = require('../src/api/routes/payments');
+const botWebhookRoutes = require('../src/api/routes/bot-webhook');
+const businessByPhoneRoutes = require('../src/api/routes/business-by-phone');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/businesses', businessRoutes);
+app.use('/api/business/by-phone', businessByPhoneRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/bot', botWebhookRoutes);
 
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
