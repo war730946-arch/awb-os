@@ -35,7 +35,11 @@ export default function NewBusinessPage() {
       const res = await createBusiness(form);
       router.push(`/dashboard/businesses/${res.business.id}`);
     } catch (err) {
-      setError(err.message);
+      if (err.message === 'Internal server error' && form.phone_number) {
+        setError(`Phone number "${form.phone_number}" is already registered with another business. Go back to dashboard and use your existing business.`);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
