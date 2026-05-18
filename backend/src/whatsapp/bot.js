@@ -1,10 +1,12 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
 const { getBusinessByPhone, saveMessage, upsertCustomer, isSubscriptionActive, checkCanRespond, getSubscription, createLead } = require('../database');
 const { generateResponse } = require('../ai/engine');
 const { processVoice } = require('../voice/processor');
+
+process.env.NODE_OPTIONS = '--dns-result-order=verbatim';
 
 const activeBots = new Map();
 
@@ -22,12 +24,20 @@ async function startBot(businessId, phoneNumber) {
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
+  const { version } = await fetchLatestWaWebVersion().catch(() => ({ version: [2, 3000, 1023223821] }));
+
   const sock = makeWASocket({
+    version,
     auth: state,
     printQRInTerminal: false,
     browser: ['AWB-OS', 'Chrome', '1.0.0'],
     syncFullHistory: false,
-    markOnlineOnConnect: true
+    markOnlineOnConnect: true,
+    connectTimeoutMs: 30000,
+    keepAliveIntervalMs: 25000,
+    generateHighQualityLink: true,
+    linkPreviewImage: false,
+    patch: true
   });
 
   sock.ev.on('creds.update', saveCreds);

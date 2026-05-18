@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
@@ -37,12 +37,20 @@ async function startBot() {
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
+  const { version } = await fetchLatestWaWebVersion().catch(() => ({ version: [2, 3000, 1023223821] }));
+
   const sock = makeWASocket({
+    version,
     auth: state,
     printQRInTerminal: false,
     browser: ['AWB-OS', 'Chrome', '1.0.0'],
     syncFullHistory: false,
-    markOnlineOnConnect: true
+    markOnlineOnConnect: true,
+    connectTimeoutMs: 30000,
+    keepAliveIntervalMs: 25000,
+    generateHighQualityLink: true,
+    linkPreviewImage: false,
+    patch: true
   });
 
   sock.ev.on('creds.update', saveCreds);
