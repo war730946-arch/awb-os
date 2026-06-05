@@ -11,3 +11,5 @@ backend/src/whatsapp/auth_info*/
 frontend/.next/
 frontend/out/
 yarn-error.log*
+
+.vercel

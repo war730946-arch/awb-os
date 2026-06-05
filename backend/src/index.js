@@ -28,10 +28,17 @@ async function start() {
 
   try {
     const { startBot } = require('./whatsapp/bot');
-    await startBot();
-    console.log('✅ WhatsApp bot started');
+    const user = await db.getUserByEmail('admin@awb-os.com');
+    if (user) {
+      const businesses = await db.getUserBusinesses(user.id);
+      if (businesses.length > 0) {
+        const biz = businesses[0];
+        await startBot(biz.id, biz.phone_number);
+        console.log('✅ WhatsApp bot started for', biz.phone_number);
+      }
+    }
   } catch (err) {
-    console.log('⚠️ WhatsApp bot not available:', err.message);
+    console.log('ℹ️ WhatsApp bot not available:', err.message);
   }
 }
 
