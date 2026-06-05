@@ -4,11 +4,63 @@ process.env.DATABASE_URL = '';
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const https = require('https');
 
 const db = require('./src/database');
 const { app, PORT } = require('./src/api/server');
 
 process.env.NODE_OPTIONS = '--dns-result-order=verbatim';
+
+const RAILWAY_API = 'jubilant-hope-production-ccfa.up.railway.app';
+
+function railwayRequest(method, pathname, token, body) {
+  return new Promise((resolve) => {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const data = body ? JSON.stringify(body) : null;
+    if (data) headers['Content-Length'] = Buffer.byteLength(data);
+    const opts = { hostname: RAILWAY_API, path: pathname, method, headers, timeout: 15000 };
+    const r = https.request(opts, (res) => {
+      let b = '';
+      res.on('data', c => b += c);
+      res.on('end', () => resolve({ status: res.statusCode, body: b }));
+    });
+    r.on('error', e => resolve({ status: 0, error: e.message }));
+    r.on('timeout', () => { r.destroy(); resolve({ status: 0, error: 'timeout' }); });
+    if (data) r.write(data);
+    r.end();
+  });
+}
+
+async function railwayLogin() {
+  const res = await railwayRequest('POST', '/api/auth/login', null, { email: 'admin@awb-os.com', password: 'Admin@123456' });
+  if (res.status === 200) {
+    const d = JSON.parse(res.body);
+    return d.token;
+  }
+  return null;
+}
+
+async function syncToRailway(qr, connected, phone) {
+  try {
+    const token = await railwayLogin();
+    if (!token) { console.log('Sync: Railway login failed'); return; }
+    // Get business from Railway
+    const bizRes = await railwayRequest('GET', '/api/businesses', token);
+    if (bizRes.status !== 200) return;
+    const bizData = JSON.parse(bizRes.body);
+    const biz = bizData.businesses[0];
+    if (!biz) return;
+    // Update QR / status on Railway
+    const update = {};
+    if (qr !== undefined) update.whatsapp_qr = qr;
+    if (connected !== undefined) update.whatsapp_connected = connected;
+    if (phone) update.phone_number = phone;
+    await railwayRequest('PUT', '/api/businesses/' + biz.id, token, update);
+  } catch (e) {
+    console.log('Sync error:', e.message);
+  }
+}
 
 let business;
 
@@ -80,6 +132,7 @@ async function startBot() {
       console.log(`\nQR Code for ${business.phone_number}`);
       console.log(`Open WhatsApp > Linked Devices > Scan QR\n`);
       await updateBusiness(business.id, { whatsapp_qr: qr, whatsapp_connected: false });
+      await syncToRailway(qr, false, business.phone_number);
       try { require('qrcode').toFile(path.join(__dirname, 'wa-qr.png'), qr, { width: 500, margin: 2 }); } catch (e) {}
 
       if (qr && !pairingAttempted) {
@@ -96,6 +149,7 @@ async function startBot() {
     if (connection === 'open') {
       console.log(`\n✅ WhatsApp CONNECTED! Bot running.\n`);
       await updateBusiness(business.id, { whatsapp_connected: true, whatsapp_qr: '' });
+      await syncToRailway('', true, business.phone_number);
     }
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;

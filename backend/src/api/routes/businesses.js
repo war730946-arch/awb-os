@@ -113,10 +113,14 @@ router.post('/:id/connect-whatsapp', async (req, res) => {
       return res.status(400).json({ error: 'Phone number required' });
     }
 
-    await db.updateBusiness(req.params.id, { phone_number, whatsapp_qr: '', whatsapp_connected: false });
-    await getBotModule().stopBot(req.params.id);
-    await new Promise(r => setTimeout(r, 1000));
-    await getBotModule().startBot(req.params.id, phone_number);
+    await db.updateBusiness(req.params.id, { phone_number, whatsapp_connected: false });
+    try {
+      await getBotModule().stopBot(req.params.id);
+      await new Promise(r => setTimeout(r, 1000));
+      await getBotModule().startBot(req.params.id, phone_number);
+    } catch (e) {
+      console.log('Bot auto-start skipped (QR from local bot sync):', e.message);
+    }
 
     res.json({ success: true, message: 'WhatsApp connection initiated' });
   } catch (error) {
