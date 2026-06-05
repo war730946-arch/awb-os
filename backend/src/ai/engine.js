@@ -6,6 +6,8 @@ const db = require('../database');
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const AI_MODEL = process.env.AI_MODEL || 'llama3.2';
 const AI_TEMPERATURE = parseFloat(process.env.AI_TEMPERATURE || '0.7');
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 async function generateResponse(business, userMessage, history = []) {
   try {
@@ -43,25 +45,22 @@ You:`;
     });
 
     let reply = response.data.response?.trim() || '';
-
     reply = cleanResponse(reply);
 
     return { reply, intent, lang };
 
   } catch (error) {
-    console.error('AI Engine Error:', error.message);
-    if (error.code === 'ECONNREFUSED') {
-      return {
-        reply: getFallbackResponse(business),
-        intent: 'inquiry',
-        lang: 'english'
-      };
+    console.error('Ollama Error:', error.message);
+
+    if (OPENAI_API_KEY) {
+      try {
+        return await callOpenAI(business, userMessage, history);
+      } catch (openAiError) {
+        console.error('OpenAI Fallback Error:', openAiError.message);
+      }
     }
-    return {
-      reply: 'I apologize, but I am facing a technical issue. Please try again in a moment.',
-      intent: 'inquiry',
-      lang: 'english'
-    };
+
+    return generateFallbackResponse(business, userMessage);
   }
 }
 
@@ -71,6 +70,118 @@ async function generateResponseDirect(business, userMessage) {
     : [];
 
   return generateResponse(business, userMessage.message || userMessage, history || []);
+}
+
+async function callOpenAI(business, userMessage, history) {
+  const aiSettings = business.ai_settings || {};
+  const intent = detectIntent(userMessage);
+  const lang = detectLanguage(userMessage);
+  const { system, conversation } = buildConversationPrompt(business, aiSettings, '', history);
+  const langInstruction = getLanguageInstruction(lang, aiSettings.language);
+  const intentInstruction = getIntentInstruction(intent);
+
+  const messages = [
+    { role: 'system', content: `${system}\n\n${langInstruction}\n${intentInstruction}` }
+  ];
+
+  for (const msg of history.slice(-10)) {
+    messages.push({ role: 'user', content: msg.message });
+    messages.push({ role: 'assistant', content: msg.response });
+  }
+
+  messages.push({ role: 'user', content: userMessage });
+
+  const response = await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model: OPENAI_MODEL,
+      messages,
+      temperature: AI_TEMPERATURE,
+      max_tokens: 256
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
+  reply = cleanResponse(reply);
+
+  return { reply, intent, lang };
+}
+
+function generateFallbackResponse(business, userMessage) {
+  const intent = detectIntent(userMessage);
+  const lang = detectLanguage(userMessage);
+  const businessName = business.name || 'our business';
+  const services = Array.isArray(business.services) ? business.services : [];
+
+  const greetings = [
+    `Hello! Welcome to ${businessName}. How can I help you today?`,
+    `Hi there! Thanks for reaching out to ${businessName}. What can I assist you with?`,
+    `Hey! Great to hear from you. This is ${businessName}, how may I help?`
+  ];
+
+  const thanks = [
+    `You're welcome! If you need anything else, feel free to ask.`,
+    `Happy to help! Let me know if there's anything else you need.`,
+    `My pleasure! I'm here if you have more questions.`
+  ];
+
+  const pricing = [
+    `Sure! I'd be happy to share our pricing details. ` + (services.length > 0
+      ? `We offer: ${services.map(s => `${s.name} ($${s.price})`).join(', ')}. `
+      : `Let me check our latest rates for you. `) +
+    `Would you like to proceed with any of these?`,
+    `Great question about pricing! ` + (services.length > 0
+      ? `Here's what we have: ${services.map(s => `${s.name} - $${s.price}`).join(', ')}. `
+      : `I can look up the pricing for you. `) +
+    `Would you like more details on any service?`
+  ];
+
+  const booking = [
+    `I'd love to help you book! Could you share your name, preferred date, and time so I can check availability?`,
+    `Sure, let me help with that! Please tell me your name and the date/time you'd prefer.`
+  ];
+
+  const complaint = [
+    `I'm sorry to hear about this. Let me make it right. Could you share more details so I can look into it and find a solution?`,
+    `I apologize for the inconvenience. Please tell me what happened so I can resolve this for you.`
+  ];
+
+  const emergency = [
+    `This sounds urgent. Please call us directly at your earliest convenience so we can assist you immediately.`,
+    `For urgent matters, I recommend reaching us by phone right away. We're here to help.`
+  ];
+
+  const inquiryTemplates = [
+    `Thank you for your message. Regarding "${userMessage}", I'd be happy to help. ` +
+    (services.length > 0
+      ? `We offer ${services.map(s => s.name).join(', ')}. `
+      : `Let me provide you with the information you need. `) +
+    `Could you tell me a bit more about what you're looking for?`,
+    `Thanks for reaching out to ${businessName}! ` +
+    `I understand you're asking about "${userMessage.substring(0, 50)}". ` +
+    `Let me help you with that. What specific details are you looking for?`
+  ];
+
+  let templates;
+  switch (intent) {
+    case 'greeting': templates = greetings; break;
+    case 'thanks':   templates = thanks; break;
+    case 'pricing':  templates = pricing; break;
+    case 'booking':  templates = booking; break;
+    case 'complaint': templates = complaint; break;
+    case 'emergency': templates = emergency; break;
+    default:         templates = inquiryTemplates; break;
+  }
+
+  const reply = templates[Math.floor(Math.random() * templates.length)];
+
+  return { reply, intent, lang };
 }
 
 function getLanguageInstruction(detectedLang, settingLang) {
@@ -100,10 +211,6 @@ function cleanResponse(text) {
     .replace(/^(You:|Assistant:|AI:|Bot:)\s*/gmi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-}
-
-function getFallbackResponse(business) {
-  return `Hi! Welcome to ${business.name}. I'm currently processing your request. Could you please briefly share what you're looking for? I'll be happy to assist you.`;
 }
 
 module.exports = { generateResponse, generateResponseDirect };
