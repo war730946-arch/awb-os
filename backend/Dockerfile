@@ -1,12 +1,16 @@
 FROM node:20-alpine
 
+ARG CACHEBUST=1
+
 WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+RUN npm install --production
 
 COPY . .
+
+RUN echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ) cachebust=$CACHEBUST" > /app/build-info.txt
 
 ENV NODE_ENV=production
 
