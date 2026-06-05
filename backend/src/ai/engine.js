@@ -8,96 +8,110 @@ const AI_MODEL = process.env.AI_MODEL || 'llama3.2';
 const AI_TEMPERATURE = parseFloat(process.env.AI_TEMPERATURE || '0.7');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const HF_TOKEN = process.env.HF_TOKEN || '';
+const HF_MODEL = process.env.HF_MODEL || 'mistralai/Mistral-7B-Instruct-v0.3';
 
 async function generateResponse(business, userMessage, history = []) {
-  try {
-    const aiSettings = business.ai_settings || {};
-    const intent = detectIntent(userMessage);
-    const lang = detectLanguage(userMessage);
-    const customerName = '';
-
-    const { system, conversation } = buildConversationPrompt(
-      business, aiSettings, customerName, history
-    );
-
-    const langInstruction = getLanguageInstruction(lang, aiSettings.language);
-    const intentInstruction = getIntentInstruction(intent);
-
-    const fullPrompt = `${system}
-
-${langInstruction}
-${intentInstruction}
-
-${conversation}
-Customer: ${userMessage}
-You:`;
-
-    const response = await axios.post(`${OLLAMA_URL}/api/generate`, {
-      model: AI_MODEL,
-      prompt: fullPrompt,
-      system: system,
-      temperature: AI_TEMPERATURE,
-      stream: false,
-      options: {
-        num_predict: 256,
-        stop: ['Customer:', '\n\n\n']
-      }
-    });
-
-    let reply = response.data.response?.trim() || '';
-    reply = cleanResponse(reply);
-
-    return { reply, intent, lang };
-
-  } catch (error) {
-    console.error('Ollama Error:', error.message);
-
-    if (OPENAI_API_KEY) {
-      try {
-        return await callOpenAI(business, userMessage, history);
-      } catch (openAiError) {
-        console.error('OpenAI Fallback Error:', openAiError.message);
-      }
-    }
-
-    return generateFallbackResponse(business, userMessage);
-  }
-}
-
-async function generateResponseDirect(business, userMessage) {
-  const history = db.getCustomerMessages
-    ? db.getCustomerMessages(business.id, userMessage.from || '', 10)
-    : [];
-
-  return generateResponse(business, userMessage.message || userMessage, history || []);
-}
-
-async function callOpenAI(business, userMessage, history) {
   const aiSettings = business.ai_settings || {};
   const intent = detectIntent(userMessage);
   const lang = detectLanguage(userMessage);
-  const { system, conversation } = buildConversationPrompt(business, aiSettings, '', history);
+
+  const { system, conversation } = buildConversationPrompt(
+    business, aiSettings, '', history
+  );
+
   const langInstruction = getLanguageInstruction(lang, aiSettings.language);
   const intentInstruction = getIntentInstruction(intent);
 
   const messages = [
     { role: 'system', content: `${system}\n\n${langInstruction}\n${intentInstruction}` }
   ];
-
-  for (const msg of history.slice(-10)) {
-    messages.push({ role: 'user', content: msg.message });
-    messages.push({ role: 'assistant', content: msg.response });
+  for (const msg of (history || []).slice(-10)) {
+    messages.push({ role: 'user', content: msg.message || msg.content || '' });
+    messages.push({ role: 'assistant', content: msg.response || msg.reply || '' });
   }
-
   messages.push({ role: 'user', content: userMessage });
 
+  // 1. Try Hugging Face (user's choice)
+  if (HF_TOKEN) {
+    try {
+      return await callHuggingFace(messages, intent, lang);
+    } catch (err) {
+      console.error('HuggingFace Error:', err.message);
+    }
+  }
+
+  // 2. Try Groq
+  if (GROQ_API_KEY) {
+    try {
+      return await callGroq(messages, intent, lang);
+    } catch (err) {
+      console.error('Groq Error:', err.message);
+    }
+  }
+
+  // 3. Try OpenAI
+  if (OPENAI_API_KEY) {
+    try {
+      return await callOpenAI(messages, intent, lang);
+    } catch (err) {
+      console.error('OpenAI Error:', err.message);
+    }
+  }
+
+  // 4. Try Google Gemini
+  if (GEMINI_API_KEY) {
+    try {
+      return await callGemini(messages, intent, lang);
+    } catch (err) {
+      console.error('Gemini Error:', err.message);
+    }
+  }
+
+  // 5. Try local Ollama
+  try {
+    return await callOllama(system, userMessage, conversation, langInstruction, intentInstruction, intent, lang);
+  } catch (err) {
+    console.error('Ollama Error:', err.message);
+  }
+
+  // 6. Fallback templates
+  return generateFallbackResponse(business, userMessage);
+}
+
+async function callGroq(messages, intent, lang) {
+  const response = await axios.post(
+    'https://api.groq.com/openai/v1/chat/completions',
+    {
+      model: GROQ_MODEL,
+      messages,
+      temperature: AI_TEMPERATURE,
+      max_tokens: 300
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+  let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
+  reply = cleanResponse(reply);
+  return { reply, intent, lang };
+}
+
+async function callOpenAI(messages, intent, lang) {
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
       model: OPENAI_MODEL,
       messages,
       temperature: AI_TEMPERATURE,
-      max_tokens: 256
+      max_tokens: 300
     },
     {
       headers: {
@@ -106,10 +120,96 @@ async function callOpenAI(business, userMessage, history) {
       }
     }
   );
-
   let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
   reply = cleanResponse(reply);
+  return { reply, intent, lang };
+}
 
+async function callGemini(messages, intent, lang) {
+  const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+  const chatHistory = messages.filter(m => m.role !== 'system').slice(0, -1);
+  const lastMsg = messages.filter(m => m.role !== 'system').slice(-1)[0];
+
+  const contents = [];
+  for (const msg of chatHistory) {
+    contents.push({ role: msg.role === 'assistant' ? 'model' : 'user', parts: [{ text: msg.content }] });
+  }
+  contents.push({ role: 'user', parts: [{ text: lastMsg?.content || '' }] });
+
+  const response = await axios.post(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      contents,
+      systemInstruction: { parts: [{ text: systemMsg }] },
+      generationConfig: { temperature: AI_TEMPERATURE, maxOutputTokens: 300 }
+    }
+  );
+  let reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+  reply = cleanResponse(reply);
+  return { reply, intent, lang };
+}
+
+async function callHuggingFace(messages, intent, lang) {
+  const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+  const chatMessages = messages.filter(m => m.role !== 'system');
+  const conversationText = chatMessages.map(m =>
+    `${m.role === 'assistant' ? 'Assistant' : 'Human'}: ${m.content}`
+  ).join('\n');
+
+  const prompt = `${systemMsg}
+
+${conversationText}
+Assistant:`;
+
+  const response = await axios.post(
+    `https://api-inference.huggingface.co/models/${HF_MODEL}`,
+    {
+      inputs: prompt,
+      parameters: {
+        max_new_tokens: 300,
+        temperature: AI_TEMPERATURE,
+        return_full_text: false
+      }
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${HF_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 60000
+    }
+  );
+
+  let reply = '';
+  if (Array.isArray(response.data)) {
+    reply = response.data[0]?.generated_text?.trim() || '';
+  } else if (response.data?.generated_text) {
+    reply = response.data.generated_text.trim();
+  }
+  reply = cleanResponse(reply);
+  return { reply, intent, lang };
+}
+
+async function callOllama(system, userMessage, conversation, langInstruction, intentInstruction, intent, lang) {
+  const fullPrompt = `${system}
+
+${langInstruction}
+${intentInstruction}
+
+${conversation}
+Customer: ${userMessage}
+You:`;
+
+  const response = await axios.post(`${OLLAMA_URL}/api/generate`, {
+    model: AI_MODEL,
+    prompt: fullPrompt,
+    system: system,
+    temperature: AI_TEMPERATURE,
+    stream: false,
+    options: { num_predict: 256, stop: ['Customer:', '\n\n\n'] }
+  });
+  let reply = response.data.response?.trim() || '';
+  reply = cleanResponse(reply);
   return { reply, intent, lang };
 }
 
@@ -213,4 +313,4 @@ function cleanResponse(text) {
     .trim();
 }
 
-module.exports = { generateResponse, generateResponseDirect };
+module.exports = { generateResponse };

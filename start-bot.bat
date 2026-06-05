@@ -1,20 +1,20 @@
 @echo off
 title AWB-OS WhatsApp Bot
-echo ====================================
-echo   AWB-OS WhatsApp Bot Launcher
-echo ====================================
-echo.
-
 cd /d "%~dp0backend"
-
-set API_URL=https://backend-ddjdpd94x-war730946-9176s-projects.vercel.app
-
-echo Starting WhatsApp bot...
-echo API URL: %API_URL%
+echo ===========================================
+echo   AWB-OS WhatsApp Business Bot
+echo ===========================================
 echo.
-echo Press Ctrl+C to stop the bot
+echo Admin: admin@awb-os.com / Admin@123456
+echo Phone: 923281146929
 echo.
-
-node ..\bot-standalone.js
-
+echo When QR code appears in terminal:
+echo   Open WhatsApp ^> 3 dots ^> Linked Devices ^> Link a Device
+echo.
+echo The pairing code (7 chars) also appears.
+echo Use it if "Link with Phone Number" is available.
+echo.
+echo ===========================================
+echo.
+node local-start.js
 pause
