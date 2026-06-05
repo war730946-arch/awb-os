@@ -9,6 +9,8 @@ const db = require('./src/database');
 
 process.env.NODE_OPTIONS = '--dns-result-order=verbatim';
 
+let business;
+
 async function main() {
   console.log('\n=== AWB-OS Local WhatsApp Bot ===\n');
 
@@ -29,7 +31,6 @@ async function main() {
   }
 
   let businesses = await db.getUserBusinesses(user.id);
-  let business;
   if (businesses.length === 0) {
     business = await db.createBusiness({
       user_id: user.id,
@@ -45,9 +46,13 @@ async function main() {
     console.log('Business exists for phone:', business.phone_number, '\n');
   }
 
+  await startBot();
+}
+
+async function startBot() {
   const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
   const qrcodeTerminal = require('qrcode-terminal');
-  const { getBusinessByPhone, saveMessage, upsertCustomer, getCustomerMessages, updateBusiness } = require('./src/database');
+  const { saveMessage, upsertCustomer, getCustomerMessages, updateBusiness } = require('./src/database');
   const { generateResponse } = require('./src/ai/engine');
 
   const authDir = path.join(__dirname, `auth_info_${business.id}`);
@@ -90,7 +95,7 @@ async function main() {
       await updateBusiness(business.id, { whatsapp_qr: '' });
       if (shouldReconnect) {
         console.log('Reconnecting in 3s...');
-        setTimeout(() => process.exit(1), 3000);
+        setTimeout(startBot, 3000);
       }
     }
   });
@@ -125,8 +130,8 @@ async function main() {
         reply = templates[Math.floor(Math.random() * templates.length)];
       }
       await sock.sendMessage(message.key.remoteJid, { text: reply });
-      await saveMessage(business.id, customer?.id || '', userPhone, text, response, 'inquiry');
-      console.log(`[Bot] ${response}\n`);
+      await saveMessage(business.id, customer?.id || '', userPhone, text, reply, 'inquiry');
+      console.log(`[Bot] ${reply}\n`);
     } catch (err) {
       console.error('Error:', err.message);
     }
@@ -134,7 +139,7 @@ async function main() {
 
   console.log(`\n🤖 Bot starting for ${business.name} (${business.phone_number})`);
   console.log(`Auth: ${authDir}`);
-  console.log(`\nQR will appear above. If it expires, Ctrl+C and run again.\n`);
+  console.log(`\nQR will appear above. If it expires, it will auto-reconnect.\n`);
 }
 
 main().catch(err => { console.error('Fatal:', err); process.exit(1); });

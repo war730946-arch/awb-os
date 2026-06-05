@@ -25,6 +25,14 @@ async function start() {
     console.log(`✅ API Server running on http://localhost:${PORT}`);
     console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
   });
+
+  try {
+    const { startBot } = require('./whatsapp/bot');
+    await startBot();
+    console.log('✅ WhatsApp bot started');
+  } catch (err) {
+    console.log('⚠️ WhatsApp bot not available:', err.message);
+  }
 }
 
 start();

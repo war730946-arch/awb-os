@@ -10,6 +10,8 @@ const { app, PORT } = require('./src/api/server');
 
 process.env.NODE_OPTIONS = '--dns-result-order=verbatim';
 
+let business;
+
 async function main() {
   console.log('\n=== AWB-OS Local Server + Bot ===\n');
 
@@ -27,7 +29,6 @@ async function main() {
   }
 
   let businesses = await db.getUserBusinesses(user.id);
-  let business;
   if (businesses.length === 0) {
     business = await db.createBusiness({
       user_id: user.id, name: 'My Business', type: 'general',
@@ -48,9 +49,14 @@ async function main() {
   });
 
   // Start WhatsApp bot
+  await startBot();
+}
+
+async function startBot() {
+  let pairingAttempted = false;
   const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
   const qrcodeTerminal = require('qrcode-terminal');
-  const { getBusinessByPhone, saveMessage, upsertCustomer, getCustomerMessages, updateBusiness } = require('./src/database');
+  const { saveMessage, upsertCustomer, getCustomerMessages, updateBusiness } = require('./src/database');
   const { generateResponse } = require('./src/ai/engine');
 
   const authDir = path.join(__dirname, `auth_info_${business.id}`);
@@ -74,6 +80,18 @@ async function main() {
       console.log(`\nQR Code for ${business.phone_number}`);
       console.log(`Open WhatsApp > Linked Devices > Scan QR\n`);
       await updateBusiness(business.id, { whatsapp_qr: qr, whatsapp_connected: false });
+      try { require('qrcode').toFile(path.join(__dirname, 'wa-qr.png'), qr, { width: 500, margin: 2 }); } catch (e) {}
+
+      if (qr && !pairingAttempted) {
+        pairingAttempted = true;
+        try {
+          const code = await sock.requestPairingCode(business.phone_number);
+          console.log(`\n✦ PAIRING CODE: ${code} ✦`);
+          console.log(`Enter in WhatsApp > Linked Devices > Link with Phone Number\n`);
+        } catch (e) {
+          console.log('Pairing code not available, use QR instead');
+        }
+      }
     }
     if (connection === 'open') {
       console.log(`\n✅ WhatsApp CONNECTED! Bot running.\n`);
@@ -82,11 +100,15 @@ async function main() {
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log('Disconnected:', lastDisconnect?.error?.message || '');
+      const errMsg = lastDisconnect?.error?.message || '';
+      console.log('Disconnected:', errMsg);
       await updateBusiness(business.id, { whatsapp_qr: '' });
       if (shouldReconnect) {
+        if (errMsg === 'Connection Failure') {
+          try { fs.unlinkSync(path.join(authDir, 'creds.json')); } catch (e) {}
+        }
         console.log('Reconnecting in 3s...');
-        setTimeout(() => process.exit(1), 3000);
+        setTimeout(startBot, 3000);
       }
     }
   });
@@ -117,8 +139,8 @@ async function main() {
         reply = templates[Math.floor(Math.random() * templates.length)];
       }
       await sock.sendMessage(message.key.remoteJid, { text: reply });
-      await saveMessage(business.id, customer?.id || '', userPhone, text, response, 'inquiry');
-      console.log(`[Bot] ${response}\n`);
+      await saveMessage(business.id, customer?.id || '', userPhone, text, reply, 'inquiry');
+      console.log(`[Bot] ${reply}\n`);
     } catch (err) {
       console.error('Error:', err.message);
     }

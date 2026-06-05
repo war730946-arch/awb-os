@@ -1,4 +1,4 @@
-const RAW_URL = 'http://localhost:3456';
+const RAW_URL = 'https://jubilant-hope-production-ccfa.up.railway.app';
 const API_BASE = `${RAW_URL}/api`;
 
 async function request(endpoint, options = {}) {

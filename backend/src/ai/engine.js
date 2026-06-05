@@ -13,7 +13,7 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const HF_TOKEN = process.env.HF_TOKEN || '';
-const HF_MODEL = process.env.HF_MODEL || 'mistralai/Mistral-7B-Instruct-v0.3';
+const HF_MODEL = process.env.HF_MODEL || 'Qwen/Qwen2.5-7B-Instruct';
 
 async function generateResponse(business, userMessage, history = []) {
   const aiSettings = business.ai_settings || {};
@@ -150,26 +150,13 @@ async function callGemini(messages, intent, lang) {
 }
 
 async function callHuggingFace(messages, intent, lang) {
-  const systemMsg = messages.find(m => m.role === 'system')?.content || '';
-  const chatMessages = messages.filter(m => m.role !== 'system');
-  const conversationText = chatMessages.map(m =>
-    `${m.role === 'assistant' ? 'Assistant' : 'Human'}: ${m.content}`
-  ).join('\n');
-
-  const prompt = `${systemMsg}
-
-${conversationText}
-Assistant:`;
-
   const response = await axios.post(
-    `https://api-inference.huggingface.co/models/${HF_MODEL}`,
+    'https://router.huggingface.co/v1/chat/completions',
     {
-      inputs: prompt,
-      parameters: {
-        max_new_tokens: 300,
-        temperature: AI_TEMPERATURE,
-        return_full_text: false
-      }
+      model: HF_MODEL,
+      messages,
+      temperature: AI_TEMPERATURE,
+      max_tokens: 300
     },
     {
       headers: {
@@ -179,13 +166,7 @@ Assistant:`;
       timeout: 60000
     }
   );
-
-  let reply = '';
-  if (Array.isArray(response.data)) {
-    reply = response.data[0]?.generated_text?.trim() || '';
-  } else if (response.data?.generated_text) {
-    reply = response.data.generated_text.trim();
-  }
+  let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
   reply = cleanResponse(reply);
   return { reply, intent, lang };
 }
