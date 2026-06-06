@@ -49,10 +49,21 @@ async function startBot(businessId, phoneNumber) {
 
     if (qr) {
       qrcode.generate(qr, { small: true });
-      console.log(`\n📱 QR Code for Business ${businessId} (${phoneNumber})`);
-      console.log('Scan with WhatsApp to connect!\n');
+      console.log(`\n📱 QR for ${phoneNumber}`);
       const { updateBusiness } = require('../database');
       await updateBusiness(businessId, { whatsapp_qr: qr, whatsapp_connected: false });
+      // Save QR as PNG
+      try {
+        const qrPng = require('qrcode');
+        await qrPng.toFile(path.join(__dirname, '../../wa-qr.png'), qr, { width: 500, margin: 2 });
+        console.log('  QR image saved: wa-qr.png');
+      } catch (e) {}
+      // Generate pairing code
+      try {
+        const code = await sock.requestPairingCode(phoneNumber);
+        await updateBusiness(businessId, { pairing_code: code });
+        console.log('  Pairing code: ' + code);
+      } catch (e) {}
     }
 
     if (connection === 'open') {
@@ -67,9 +78,10 @@ async function startBot(businessId, phoneNumber) {
 
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      const wasConnected = statusCode === DisconnectReason.connectionClosed || statusCode === DisconnectReason.connectionLost;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut && wasConnected;
 
-      console.log(`❌ Connection closed for ${phoneNumber}. Reconnect: ${shouldReconnect}`, lastDisconnect?.error?.message || '');
+      console.log(`❌ Closed for ${phoneNumber}. wasConnected:${wasConnected}`, lastDisconnect?.error?.message?.substring(0, 60) || '');
 
       const { updateBusiness } = require('../database');
 
