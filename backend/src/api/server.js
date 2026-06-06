@@ -19,12 +19,26 @@ app.use(cors({
 app.use(express.json());
 app.use(morgan('dev'));
 
+app.get('/qr.png', async (req, res) => {
+  try {
+    const db = require('../database');
+    const users = await db.getUserByEmail('admin@awb-os.com');
+    if (!users) return res.status(404).end();
+    const businesses = await db.getUserBusinesses(users.id);
+    const biz = businesses[0];
+    if (!biz || !biz.whatsapp_qr) return res.status(404).end();
+    const qrImage = require('qrcode');
+    const png = await qrImage.toBuffer(biz.whatsapp_qr, { width: 500, margin: 2, type: 'png' });
+    res.set('Content-Type', 'image/png');
+    res.send(png);
+  } catch(e) { res.status(500).end(); }
+});
+
 app.get('/', async (req, res) => {
   try {
     const db = require('../database');
-    const { getBusinessByPhone } = db;
     const users = await db.getUserByEmail ? db.getUserByEmail('admin@awb-os.com') : null;
-    let qr = '', connected = false, phone = '923281146929', pairingCode = '', businessId = '';
+    let qr = '', connected = false, phone = '923281146929', businessId = '';
     if (users) {
       const businesses = await db.getUserBusinesses(users.id);
       if (businesses.length > 0) {
@@ -35,12 +49,11 @@ app.get('/', async (req, res) => {
         businessId = biz.id;
       }
     }
-    const qrImg = qr ? await (() => { try { return require('qrcode').toDataURL(qr); } catch(e) { return ''; } })() : '';
-    const activeBots = require('../whatsapp/bot');
+    let pairingCode = '';
     if (businessId) {
-      try { const c = await activeBots.requestPairing(businessId, phone).catch(() => {}); if (c?.code) pairingCode = c.code; } catch(e) {}
+      try { const activeBots = require('../whatsapp/bot'); const c = await activeBots.requestPairing(businessId, phone).catch(() => {}); if (c?.code) pairingCode = c.code; } catch(e) {}
     }
-    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AWB-OS Bot</title><script>setTimeout(()=>location.reload(),3000)</script><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif;background:#0f0f0f;color:#fff;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}.card{background:#1a1a2e;border-radius:16px;padding:40px;max-width:500px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.5)}.logo{font-size:48px;margin-bottom:8px}h1{font-size:22px;margin-bottom:4px;color:#fff}.sub{color:#888;font-size:14px;margin-bottom:24px}.status{display:inline-block;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:24px}.connected{background:#00c85320;color:#00c853;border:1px solid #00c853}.disconnected{background:#ff525220;color:#ff5252;border:1px solid #ff5252}.qr-box{background:#fff;border-radius:12px;padding:20px;display:inline-block;margin-bottom:20px}.qr-box img{width:260px;height:260px;image-rendering:pixelated}.pairing{background:#252540;border-radius:12px;padding:16px;margin-top:16px}.pairing h3{font-size:14px;color:#aaa;margin-bottom:8px}.pairing .code{font-size:28px;font-weight:700;letter-spacing:6px;color:#7c4dff;font-family:monospace}.phone{color:#666;font-size:13px;margin-top:12px}.refresh{color:#444;font-size:12px;margin-top:20px}a{color:#7c4dff;text-decoration:none}.btn{display:inline-block;margin-top:20px;padding:12px 24px;background:#7c4dff;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px}hr{border:0;height:1px;background:#333;margin:20px 0}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0;font-size:13px}.info-grid div{background:#252540;padding:10px;border-radius:8px}.label{color:#888}.value{color:#fff;font-weight:500}</style></head><body><div class="card"><div class="logo">🤖</div><h1>AWB-OS WhatsApp Bot</h1><p class="sub">${phone}</p><div class="status ${connected?'connected':'disconnected'}">${connected?'✅ Connected':'⏳ Not Connected'}</div>${connected?'<div style="padding:30px 0"><div style="font-size:64px;margin-bottom:10px">✅</div><h2 style="color:#00c853">WhatsApp Connected!</h2><p style="color:#888;margin-top:8px">Bot is active and responding to messages</p></div>':''}${qr && !connected ? `<div class="qr-box"><img src="${qrImg}" alt="QR Code"/></div><div class="pairing"><h3>Pairing Code</h3><div class="code">${pairingCode || 'generating...'}</div></div><p class="phone">Open WhatsApp → Linked Devices → Scan QR or enter code</p>` : ''}${!connected && !qr ? '<div style="padding:30px 0"><p style="color:#888">Waiting for bot to initialize...</p></div>' : ''}<a href="/" class="btn">↻ Refresh</a><hr><div class="info-grid"><div><div class="label">Status</div><div class="value">${connected?'Active':'Connecting'}</div></div><div><div class="label">AI Engine</div><div class="value">Hugging Face</div></div><div><div class="label">Frontend</div><div class="value"><a href="https://frontend-nine-blue-20.vercel.app" target="_blank">Open →</a></div></div><div><div class="label">API</div><div class="value"><a href="/api/health" target="_blank">Health ✓</a></div></div></div></div></body></html>`);
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AWB-OS Bot</title><script>setTimeout(()=>location.reload(),3000)</script><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif;background:#0f0f0f;color:#fff;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}.card{background:#1a1a2e;border-radius:16px;padding:40px;max-width:500px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.5)}.logo{font-size:48px;margin-bottom:8px}h1{font-size:22px;margin-bottom:4px;color:#fff}.sub{color:#888;font-size:14px;margin-bottom:24px}.status{display:inline-block;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:24px}.connected{background:#00c85320;color:#00c853;border:1px solid #00c853}.disconnected{background:#ff525220;color:#ff5252;border:1px solid #ff5252}.qr-box{background:#fff;border-radius:12px;padding:20px;display:inline-block;margin-bottom:20px}.qr-box img{width:260px;height:260px;image-rendering:pixelated}.pairing{background:#252540;border-radius:12px;padding:16px;margin-top:16px}.pairing h3{font-size:14px;color:#aaa;margin-bottom:8px}.pairing .code{font-size:28px;font-weight:700;letter-spacing:6px;color:#7c4dff;font-family:monospace}.phone{color:#666;font-size:13px;margin-top:12px}a{color:#7c4dff;text-decoration:none}.btn{display:inline-block;margin-top:20px;padding:12px 24px;background:#7c4dff;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px}hr{border:0;height:1px;background:#333;margin:20px 0}</style></head><body><div class="card"><div class="logo">📱</div><h1>AWB-OS WhatsApp Bot</h1><p class="sub">${phone}</p><div class="status ${connected?'connected':'disconnected'}">${connected?'✅ Connected':'⏳ Not Connected'}</div>${connected?'<div style="padding:30px 0"><div style="font-size:64px">✅</div><h2 style="color:#00c853">WhatsApp Connected!</h2></div>':''}${qr && !connected ? `<div class="qr-box"><img src="/qr.png" alt="QR Code"/></div>${pairingCode ? `<div class="pairing"><h3>Pairing Code</h3><div class="code">${pairingCode}</div></div>` : ''}<p class="phone">WhatsApp → Linked Devices → Scan QR or enter code</p>` : ''}${!connected && !qr ? '<p style="color:#888">Initializing...</p>' : ''}<a href="/" class="btn">↻ Refresh</a><hr><p style="color:#444;font-size:12px">AWB-OS v1.0</p></div></body></html>`);
   } catch(e) {
     res.send(`<!DOCTYPE html><html><body><h3>AWB-OS</h3><p>${e.message}</p></body></html>`);
   }
