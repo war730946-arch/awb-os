@@ -69,10 +69,11 @@ async function startBot(businessId, phoneNumber) {
       qrTimeout = setTimeout(async () => {
         const biz = await getBusinessByPhone(phoneNumber);
         if (biz && !biz.whatsapp_connected) {
-          console.log('  QR expired (2 min), restarting for fresh QR...');
+          console.log('  QR expired (2 min). Waiting for external restart...');
           activeBots.delete(businessId);
           sock.end(new Error('QR timeout'));
-          setTimeout(() => startBot(businessId, phoneNumber), 1000);
+          const { updateBusiness } = require('../database');
+          await updateBusiness(businessId, { whatsapp_qr: '' });
         }
       }, 120000);
     }

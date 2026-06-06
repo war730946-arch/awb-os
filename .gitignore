@@ -8,6 +8,8 @@ dist/
 *.local
 backend/data/
 backend/src/whatsapp/auth_info*/
+backend/auth_info*/
+backend/wa-qr.png
 frontend/.next/
 frontend/out/
 yarn-error.log*

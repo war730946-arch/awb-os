@@ -102,15 +102,37 @@ async function main() {
     console.log('Bot module unavailable:', e.message);
   }
 
-  // Watch local DB and sync changes to Railway every 5s
+  // Bot health monitor + Railway sync every 5s
   let lastSyncedQr = '';
   let lastSyncedConnected = false;
+  let lastQrTime = Date.now();
+  const bot = require('./src/whatsapp/bot');
   setInterval(async () => {
     try {
       const current = await db.getBusinessById(business.id);
       if (!current) return;
       business = current;
 
+      // Track last time QR was present
+      if (current.whatsapp_qr && current.whatsapp_qr.length > 10) {
+        lastQrTime = Date.now();
+      }
+
+      // Health check: restart if bot not running and not connected
+      if (!current.whatsapp_connected) {
+        const isActive = bot.getBotStatus(business.id);
+        if (!isActive) {
+          console.log('♻️ Bot not active, restarting...');
+          bot.startBot(business.id, current.phone_number || '923281146929');
+        } else if (!current.whatsapp_qr && Date.now() - lastQrTime > 60000) {
+          // Bot is "active" but no QR for 60s — stuck, force restart
+          console.log('♻️ Bot stuck (no QR for 60s), force restarting...');
+          await bot.stopBot(business.id);
+          setTimeout(() => bot.startBot(business.id, current.phone_number || '923281146929'), 1000);
+        }
+      }
+
+      // Sync QR/connection changes to Railway
       const qrChanged = current.whatsapp_qr && current.whatsapp_qr !== lastSyncedQr;
       const connChanged = current.whatsapp_connected !== lastSyncedConnected;
 
