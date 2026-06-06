@@ -9,7 +9,7 @@ const { processVoice } = require('../voice/processor');
 process.env.NODE_OPTIONS = '--dns-result-order=verbatim';
 
 const activeBots = new Map();
-const BOT_QR_EXPIRY_MS = 120000; // 2 min
+const processedMessages = new Set();
 
 async function startBot(businessId, phoneNumber) {
   if (activeBots.has(businessId)) {
@@ -21,12 +21,13 @@ async function startBot(businessId, phoneNumber) {
   const authDir = isCloud
     ? path.join('/tmp', `auth_info_${businessId}`)
     : path.join(__dirname, `../../auth_info_${businessId}`);
-  if (fs.existsSync(authDir)) {
-    try { fs.rmSync(authDir, { recursive: true }); } catch (e) {}
+
+  if (!fs.existsSync(authDir)) {
+    fs.mkdirSync(authDir, { recursive: true });
   }
-  fs.mkdirSync(authDir, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  const hasSession = fs.existsSync(path.join(authDir, 'creds.json'));
 
   const { version } = await fetchLatestWaWebVersion().catch(() => ({ version: [2, 3000, 1023223821] }));
 
@@ -34,7 +35,7 @@ async function startBot(businessId, phoneNumber) {
     version,
     auth: state,
     printQRInTerminal: false,
-    browser: process.env.BROWSER ? JSON.parse(process.env.BROWSER) : ['AWB-OS', 'Chrome', '1.0.0'],
+    browser: ['AWB-OS', 'Chrome', '1.0.0'],
     syncFullHistory: false,
     markOnlineOnConnect: true,
     connectTimeoutMs: 60000,
@@ -44,54 +45,71 @@ async function startBot(businessId, phoneNumber) {
 
   sock.ev.on('creds.update', saveCreds);
 
+  let lastQr = '';
+  let qrTimeout;
+
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr) {
+    if (qr && qr !== lastQr) {
+      lastQr = qr;
       qrcode.generate(qr, { small: true });
-      console.log(`\n📱 QR for ${phoneNumber}`);
+      const d = new Date();
+      console.log(`\n[${d.toLocaleTimeString()}] 📱 QR for ${phoneNumber} (scan within 2 min)`);
       const { updateBusiness } = require('../database');
       await updateBusiness(businessId, { whatsapp_qr: qr, whatsapp_connected: false });
-      // Save QR as PNG
+
       try {
         const qrPng = require('qrcode');
         await qrPng.toFile(path.join(__dirname, '../../wa-qr.png'), qr, { width: 500, margin: 2 });
         console.log('  QR image saved: wa-qr.png');
       } catch (e) {}
-      // Generate pairing code
-      try {
-        const code = await sock.requestPairingCode(phoneNumber);
-        await updateBusiness(businessId, { pairing_code: code });
-        console.log('  Pairing code: ' + code);
-      } catch (e) {}
+
+      clearTimeout(qrTimeout);
+      qrTimeout = setTimeout(async () => {
+        const biz = await getBusinessByPhone(phoneNumber);
+        if (biz && !biz.whatsapp_connected) {
+          console.log('  QR expired (2 min), restarting for fresh QR...');
+          activeBots.delete(businessId);
+          sock.end(new Error('QR timeout'));
+          setTimeout(() => startBot(businessId, phoneNumber), 1000);
+        }
+      }, 120000);
     }
 
     if (connection === 'open') {
-      console.log(`✅ WhatsApp connected for ${phoneNumber}`);
+      clearTimeout(qrTimeout);
+      console.log(`\n✅ WhatsApp CONNECTED for ${phoneNumber}`);
       const { updateBusiness } = require('../database');
       await updateBusiness(businessId, {
         whatsapp_connected: true,
         phone_number: phoneNumber,
         whatsapp_qr: ''
       });
+
+      const biz = await getBusinessByPhone(phoneNumber);
+      if (biz && biz.pairing_code) {
+        await updateBusiness(businessId, { pairing_code: '' });
+      }
     }
 
     if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const wasConnected = statusCode === DisconnectReason.connectionClosed || statusCode === DisconnectReason.connectionLost;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut && wasConnected;
+      const code = lastDisconnect?.error?.output?.statusCode;
+      console.log(`❌ Closed ${phoneNumber}.`, lastDisconnect?.error?.message?.substring(0, 80) || '');
 
-      console.log(`❌ Closed for ${phoneNumber}. wasConnected:${wasConnected}`, lastDisconnect?.error?.message?.substring(0, 60) || '');
-
-      const { updateBusiness } = require('../database');
-
-      if (shouldReconnect) {
-        const delay = isCloud ? 15000 : 5000;
-        console.log(`🔄 Reconnecting in ${delay/1000}s...`);
-        setTimeout(() => startBot(businessId, phoneNumber), delay);
-      } else {
+      if (code === DisconnectReason.loggedOut) {
+        console.log('  → Logged out, removing session');
         activeBots.delete(businessId);
+        try { fs.rmSync(authDir, { recursive: true }); } catch (e) {}
+        const { updateBusiness } = require('../database');
         await updateBusiness(businessId, { whatsapp_connected: false, whatsapp_qr: '' });
+        return;
+      }
+
+      if (hasSession && (code === DisconnectReason.connectionClosed || code === DisconnectReason.connectionLost)) {
+        console.log('  → Session exists, reconnecting in 3s...');
+        setTimeout(() => startBot(businessId, phoneNumber), 3000);
+        return;
       }
     }
   });
@@ -99,6 +117,15 @@ async function startBot(businessId, phoneNumber) {
   sock.ev.on('messages.upsert', async (msg) => {
     const message = msg.messages[0];
     if (!message.key || !message.message || message.key.fromMe) return;
+
+    const msgId = message.key.id;
+    if (processedMessages.has(msgId)) return;
+    processedMessages.add(msgId);
+    if (processedMessages.size > 1000) {
+      const arr = [...processedMessages];
+      processedMessages.clear();
+      arr.slice(-500).forEach(id => processedMessages.add(id));
+    }
 
     const userPhone = message.key.remoteJid?.replace('@s.whatsapp.net', '');
     if (!userPhone) return;
@@ -121,7 +148,6 @@ async function startBot(businessId, phoneNumber) {
     }
 
     let userText = '';
-    let isVoice = false;
 
     if (message.message.conversation) {
       userText = message.message.conversation;
@@ -135,7 +161,6 @@ async function startBot(businessId, phoneNumber) {
     } else if (message.message.videoMessage) {
       return;
     } else if (message.message.audioMessage) {
-      isVoice = true;
       try {
         const buffer = await sock.downloadMediaMessage(message);
         const result = await processVoice(buffer);
@@ -155,21 +180,30 @@ async function startBot(businessId, phoneNumber) {
 
     if (!userText.trim()) return;
 
+    console.log(`\n💬 ${userPhone}: ${userText.substring(0, 100)}`);
+
     const customer = await upsertCustomer(businessId, userPhone, '');
     const history = await getCustomerMessages(businessId, userPhone, 10);
 
-    const { reply, intent } = await generateResponse(business, userText, history);
+    try {
+      const { reply, intent } = await generateResponse(business, userText, history);
+      await sock.sendMessage(message.key.remoteJid, { text: reply });
+      await saveMessage(businessId, userPhone, userText, reply, intent);
+      console.log(`🤖 Reply: ${reply.substring(0, 100)}`);
 
-    await sock.sendMessage(message.key.remoteJid, { text: reply });
-
-    await saveMessage(businessId, userPhone, userText, reply, intent);
-
-    if (['booking', 'pricing'].includes(intent)) {
-      await createLead(businessId, customer?.id, userPhone, customer?.name, intent);
+      if (['booking', 'pricing'].includes(intent)) {
+        await createLead(businessId, customer?.id, userPhone, customer?.name, intent);
+      }
+    } catch (err) {
+      console.error('AI error:', err.message);
+      await sock.sendMessage(message.key.remoteJid, {
+        text: 'Thanks for your message! We will get back to you shortly.'
+      });
     }
   });
 
   activeBots.set(businessId, sock);
+  if (hasSession) console.log(`  → Session found for ${phoneNumber}, restoring...`);
   return sock;
 }
 
@@ -179,6 +213,8 @@ async function requestPairing(businessId, phoneNumber) {
     try {
       const code = await sock.requestPairingCode(phoneNumber);
       console.log(`🔑 Pairing code for ${phoneNumber}: ${code}`);
+      const { updateBusiness } = require('../database');
+      await updateBusiness(businessId, { pairing_code: code });
       return { success: true, code };
     } catch (err) {
       console.error('Pairing code error:', err.message);

@@ -13,7 +13,13 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: [
+    process.env.FRONTEND_URL,
+    'http://localhost:3000',
+    'http://localhost:3456',
+    'https://frontend-nine-blue-20.vercel.app',
+    'https://jubilant-hope-production-ccfa.up.railway.app'
+  ].filter(Boolean),
   credentials: true
 }));
 app.use(express.json());
