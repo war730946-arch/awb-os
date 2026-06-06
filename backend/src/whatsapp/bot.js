@@ -9,6 +9,7 @@ const { processVoice } = require('../voice/processor');
 process.env.NODE_OPTIONS = '--dns-result-order=verbatim';
 
 const activeBots = new Map();
+const BOT_QR_EXPIRY_MS = 120000; // 2 min
 
 async function startBot(businessId, phoneNumber) {
   if (activeBots.has(businessId)) {
@@ -20,7 +21,10 @@ async function startBot(businessId, phoneNumber) {
   const authDir = isCloud
     ? path.join('/tmp', `auth_info_${businessId}`)
     : path.join(__dirname, `../../auth_info_${businessId}`);
-  if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
+  if (fs.existsSync(authDir)) {
+    try { fs.rmSync(authDir, { recursive: true }); } catch (e) {}
+  }
+  fs.mkdirSync(authDir, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
@@ -30,11 +34,12 @@ async function startBot(businessId, phoneNumber) {
     version,
     auth: state,
     printQRInTerminal: false,
-    browser: ['AWB-OS', 'Chrome', '1.0.0'],
+    browser: process.env.BROWSER ? JSON.parse(process.env.BROWSER) : ['AWB-OS', 'Chrome', '1.0.0'],
     syncFullHistory: false,
     markOnlineOnConnect: true,
-    connectTimeoutMs: 30000,
-    keepAliveIntervalMs: 25000
+    connectTimeoutMs: 60000,
+    keepAliveIntervalMs: 15000,
+    defaultQueryTimeoutMs: 60000
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -69,9 +74,9 @@ async function startBot(businessId, phoneNumber) {
       const { updateBusiness } = require('../database');
 
       if (shouldReconnect) {
-        console.log('🔄 Reconnecting in 3 seconds...');
-        await updateBusiness(businessId, { whatsapp_qr: '' });
-        setTimeout(() => startBot(businessId, phoneNumber), 3000);
+        const delay = isCloud ? 15000 : 5000;
+        console.log(`🔄 Reconnecting in ${delay/1000}s...`);
+        setTimeout(() => startBot(businessId, phoneNumber), delay);
       } else {
         activeBots.delete(businessId);
         await updateBusiness(businessId, { whatsapp_connected: false, whatsapp_qr: '' });

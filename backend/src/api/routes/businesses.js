@@ -4,13 +4,11 @@ const { authenticate } = require('../middleware/auth');
 const db = require('../../database');
 
 function getBotModule() {
-  if (process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    return { startBot: () => {}, stopBot: () => {}, getBotStatus: () => false };
-  }
   try {
-    return require('../../whatsapp/bot');
+    const mod = require('../../whatsapp/bot');
+    return mod;
   } catch {
-    return { startBot: () => {}, stopBot: () => {}, getBotStatus: () => false };
+    return { startBot: () => {}, stopBot: () => {}, getBotStatus: () => false, requestPairing: async () => ({ success: false, error: 'Bot not available' }) };
   }
 }
 
