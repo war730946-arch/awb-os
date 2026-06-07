@@ -1,10 +1,10 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Wifi, WifiOff, MessageSquare, Users, Edit3, Save, Smartphone } from 'lucide-react';
-import { getBusiness, updateBusiness, connectWhatsApp, disconnectWhatsApp, getMessages, getSubscription, fetchBusinessQr, requestPairingCode } from '../../../../lib/api';
+import { ArrowLeft, Wifi, WifiOff, MessageSquare, Users, Edit3, Save, Smartphone, QrCode } from 'lucide-react';
+import { getBusiness, updateBusiness, disconnectWhatsApp, getMessages, getSubscription, fetchBusinessQr } from '../../../../lib/api';
+import QrModal from '../../../../components/QrModal';
 
 export default function BusinessDetailPage() {
   const { id } = useParams();
@@ -15,26 +15,25 @@ export default function BusinessDetailPage() {
   const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
 
   const [form, setForm] = useState({});
   const [phoneInput, setPhoneInput] = useState('');
   const [connectLoading, setConnectLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
-  const [qrCode, setQrCode] = useState(null);
-  const [connectError, setConnectError] = useState('');
+  const [connected, setConnected] = useState(false);
   const [pairingCode, setPairingCode] = useState('');
   const [pairingLoading, setPairingLoading] = useState(false);
 
   useEffect(() => { load(); }, [id]);
 
-  // Background QR refresh: poll every 5 seconds if not connected
   useEffect(() => {
     if (!id || loading) return;
     const interval = setInterval(async () => {
       try {
         const data = await fetchBusinessQr(id);
-        if (data.qr) setQrCode(data.qr);
         if (data.connected) {
+          setConnected(true);
           clearInterval(interval);
           load();
         }
@@ -61,13 +60,7 @@ export default function BusinessDetailPage() {
         working_hours: bRes.business.working_hours || '',
       });
       setPhoneInput(bRes.business.phone_number || '');
-      // Auto-check for existing QR code
-      try {
-        const qrData = await fetchBusinessQr(id);
-        if (qrData.qr) {
-          setQrCode(qrData.qr);
-        }
-      } catch (_) {}
+      setConnected(bRes.business.whatsapp_connected || false);
     } catch (err) {
       console.error(err);
     } finally {
@@ -75,64 +68,10 @@ export default function BusinessDetailPage() {
     }
   }
 
-  async function handleConnect() {
-    if (!phoneInput.trim()) return;
-    setConnectLoading(true);
-    setQrCode(null);
-    setConnectError('');
-    try {
-      await connectWhatsApp(id, phoneInput);
-      // Poll for QR code
-      let attempts = 0;
-      const pollQr = setInterval(async () => {
-        attempts++;
-        try {
-          const data = await fetchBusinessQr(id);
-          if (data.qr) {
-            setQrCode(data.qr);
-            setConnectError('');
-          }
-          if (data.connected) {
-            clearInterval(pollQr);
-            setQrCode(null);
-            load();
-          }
-          // Timeout after 60 seconds (30 attempts * 2s)
-          if (attempts > 30) {
-            clearInterval(pollQr);
-            setConnectError('Connection timeout. Make sure your phone has WhatsApp installed and try again.');
-          }
-        } catch (_) {}
-      }, 2000);
-    } catch (err) {
-      setConnectError(err.message);
-    } finally {
-      setConnectLoading(false);
-    }
-  }
-
-  async function handlePairingCode() {
-    if (!phoneInput.trim()) return;
-    setPairingLoading(true);
-    setPairingCode('');
-    try {
-      await connectWhatsApp(id, phoneInput);
-      const res = await requestPairingCode(id, phoneInput);
-      if (res.success && res.code) {
-        setPairingCode(res.code);
-      } else {
-        setConnectError('Failed to get pairing code: ' + (res.error || 'unknown'));
-      }
-    } catch (err) {
-      setConnectError(err.message);
-    } finally {
-      setPairingLoading(false);
-    }
-  }
-
   async function handleDisconnect() {
     try {
       await disconnectWhatsApp(id);
+      setConnected(false);
       load();
     } catch (err) {
       alert(err.message);
@@ -156,7 +95,6 @@ export default function BusinessDetailPage() {
   if (!business) return <div className="text-center py-12 text-gray-400">Business not found</div>;
 
   const services = business.services || [];
-  const faqs = business.faqs || [];
 
   return (
     <div>
@@ -183,54 +121,40 @@ export default function BusinessDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="card">
           <h3 className="font-semibold text-gray-900 mb-4">WhatsApp Connection</h3>
+
           <div className="flex items-center gap-2 mb-4">
-            {business.bot_active ? (
-              <span className="flex items-center gap-1 text-green-600 text-sm"><Wifi size={16} /> Connected</span>
+            {connected ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-green-100 text-green-700">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                Connected
+              </span>
             ) : (
-              <span className="flex items-center gap-1 text-gray-400 text-sm"><WifiOff size={16} /> Disconnected</span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-500">
+                <WifiOff size={14} />
+                Disconnected
+              </span>
             )}
           </div>
 
-          {!business.whatsapp_connected ? (
-            <div className="space-y-2">
-              <input
-                type="text"
-                value={phoneInput}
-                onChange={e => setPhoneInput(e.target.value)}
-                className="input-field text-sm"
-                placeholder="+911234567890"
-              />
-              <button onClick={handleConnect} disabled={connectLoading} className="btn-primary w-full text-sm">
-                {connectLoading ? 'Connecting...' : 'Connect WhatsApp'}
+          {!connected ? (
+            <div className="space-y-3">
+              <button onClick={() => setShowQrModal(true)} className="btn-primary w-full text-sm flex items-center justify-center gap-2">
+                <QrCode size={16} />
+                Connect WhatsApp
               </button>
-              {qrCode && (
-                <div className="mt-4 text-center">
-                  <p className="text-sm text-gray-500 mb-2">Scan this QR with WhatsApp:</p>
-                  <img src={qrCode} alt="WhatsApp QR" className="mx-auto w-48 h-48" />
-                  <p className="text-xs text-gray-400 mt-2">Open WhatsApp → Menu → Linked Devices → Link a Device</p>
-                </div>
-              )}
-              <div className="mt-2 pt-2 border-t border-gray-200">
-                <button onClick={handlePairingCode} disabled={pairingLoading} className="btn-secondary w-full text-sm flex items-center justify-center gap-2">
-                  <Smartphone size={14} />
-                  {pairingLoading ? 'Getting Code...' : 'Get Pairing Code (Alternative)'}
-                </button>
-                {pairingCode && (
-                  <div className="mt-3 text-center p-3 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Type this code in WhatsApp:</p>
-                    <p className="text-2xl font-bold text-blue-600 tracking-widest">{pairingCode}</p>
-                    <p className="text-xs text-gray-400 mt-2">WhatsApp → Settings → Linked Devices → Link with Phone Number</p>
-                  </div>
-                )}
-              </div>
-              {connectError && (
-                <p className="text-sm text-red-500 mt-2">{connectError}</p>
-              )}
+              <p className="text-xs text-gray-400 text-center">
+                Click to open QR scanner. Scan with WhatsApp to connect.
+              </p>
             </div>
           ) : (
-            <button onClick={handleDisconnect} className="btn-danger w-full text-sm">
-              Disconnect
-            </button>
+            <div className="space-y-3">
+              <div className="bg-green-50 rounded-xl p-3 text-sm text-green-800">
+                WhatsApp is connected. The AI bot is active and responding to messages.
+              </div>
+              <button onClick={handleDisconnect} className="btn-danger w-full text-sm">
+                Disconnect
+              </button>
+            </div>
           )}
         </div>
 
@@ -261,13 +185,7 @@ export default function BusinessDetailPage() {
           <h3 className="font-semibold text-gray-900 mb-4">Business Info</h3>
           {editing ? (
             <div className="space-y-3">
-              <input
-                type="text"
-                value={form.name}
-                onChange={e => setForm({...form, name: e.target.value})}
-                className="input-field"
-                label="Name"
-              />
+              <input type="text" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="input-field" label="Name" />
               <select value={form.type} onChange={e => setForm({...form, type: e.target.value})} className="input-field">
                 {['general','clinic','restaurant','real_estate','salon','fitness','education','retail','service','other'].map(t => (
                   <option key={t} value={t}>{t.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>
@@ -291,7 +209,7 @@ export default function BusinessDetailPage() {
         <div className="card">
           <h3 className="font-semibold text-gray-900 mb-4">Recent Messages</h3>
           {messages.length === 0 ? (
-            <p className="text-gray-400 text-sm">No messages yet</p>
+            <p className="text-gray-400 text-sm">No messages yet. Messages will appear here after connecting WhatsApp.</p>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
               {messages.slice(0, 10).map((msg) => (
@@ -329,6 +247,14 @@ export default function BusinessDetailPage() {
           </div>
         )}
       </div>
+
+      <QrModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        businessId={id}
+        phoneNumber={business.phone_number}
+        onConnected={() => { setConnected(true); load(); }}
+      />
     </div>
   );
 }

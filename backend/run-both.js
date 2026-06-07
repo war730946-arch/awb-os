@@ -2,15 +2,15 @@ require('dotenv').config();
 process.env.DATABASE_URL = '';
 
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const https = require('https');
 
 const db = require('./src/database');
 const { app, PORT } = require('./src/api/server');
+const manager = require('./src/whatsapp/manager');
 
 process.env.NODE_OPTIONS = '--dns-result-order=verbatim';
-process.env.QRSVG = 'true'; // signal bot to generate PNG QR
+process.env.QRSVG = 'true';
 
 const RAILWAY_API = 'jubilant-hope-production-ccfa.up.railway.app';
 
@@ -52,7 +52,6 @@ async function syncToRailway(business) {
     const update = {};
     if (business.whatsapp_qr && business.whatsapp_qr !== remoteBiz.whatsapp_qr) update.whatsapp_qr = business.whatsapp_qr;
     if (business.whatsapp_connected !== remoteBiz.whatsapp_connected) update.whatsapp_connected = business.whatsapp_connected;
-    if (business.pairing_code && business.pairing_code !== remoteBiz.pairing_code) update.pairing_code = business.pairing_code;
     if (business.phone_number) update.phone_number = business.phone_number;
 
     if (Object.keys(update).length > 0) {
@@ -83,56 +82,48 @@ async function main() {
   const actualPort = PORT || 3456;
   app.listen(actualPort, () => {
     console.log(`\n╔══════════════════════════════════════╗`);
-    console.log(`║     AWB-OS WhatsApp Bot             ║`);
+    console.log(`║     AWB-OS WhatsApp Bot v2          ║`);
     console.log(`║     AI-powered Business OS          ║`);
     console.log(`╠══════════════════════════════════════╣`);
     console.log(`║  🌐  API:      http://localhost:${actualPort}`);
+    console.log(`║  🔌  WS:       ws://localhost:${actualPort}`);
     console.log(`║  🖼️  QR Img:   http://localhost:${actualPort}/qr.png`);
     console.log(`║  📱  Bot API:  http://localhost:${actualPort}/api`);
     console.log(`║  📡  Sync →    ${RAILWAY_API}`);
     console.log(`╚══════════════════════════════════════╝\n`);
   });
 
-  // Start WhatsApp bot
-  try {
-    const bot = require('./src/whatsapp/bot');
-    bot.startBot(business.id, business.phone_number || '923281146929');
-    console.log('🤖 Starting WhatsApp bot...\n');
-  } catch (e) {
-    console.log('Bot module unavailable:', e.message);
-  }
+  manager.startBot(business.id, business.phone_number || '923281146929');
+  console.log('🤖 Starting WhatsApp bot...\n');
 
-  // Bot health monitor + Railway sync every 5s
   let lastSyncedQr = '';
   let lastSyncedConnected = false;
   let lastQrTime = Date.now();
-  const bot = require('./src/whatsapp/bot');
+
   setInterval(async () => {
     try {
       const current = await db.getBusinessById(business.id);
       if (!current) return;
       business = current;
 
-      // Track last time QR was present
       if (current.whatsapp_qr && current.whatsapp_qr.length > 10) {
         lastQrTime = Date.now();
       }
 
-      // Health check: restart if bot not running and not connected
       if (!current.whatsapp_connected) {
-        const isActive = bot.getBotStatus(business.id);
-        if (!isActive) {
-          console.log('♻️ Bot not active, restarting...');
-          bot.startBot(business.id, current.phone_number || '923281146929');
-        } else if (!current.whatsapp_qr && Date.now() - lastQrTime > 60000) {
-          // Bot is "active" but no QR for 60s — stuck, force restart
-          console.log('♻️ Bot stuck (no QR for 60s), force restarting...');
-          await bot.stopBot(business.id);
-          setTimeout(() => bot.startBot(business.id, current.phone_number || '923281146929'), 1000);
+        const isActive = manager.getBotStatus(business.id);
+        const isRunning = manager.isBotRunning(business.id);
+
+        if (!isRunning) {
+          console.log('♻️ Bot not running, restarting...');
+          manager.startBot(business.id, current.phone_number || '923281146929');
+        } else if (!isActive && !current.whatsapp_qr && Date.now() - lastQrTime > 90000) {
+          console.log('♻️ Bot stuck (no QR for 90s), force restarting...');
+          await manager.stopBot(business.id);
+          setTimeout(() => manager.startBot(business.id, current.phone_number || '923281146929'), 1000);
         }
       }
 
-      // Sync QR/connection changes to Railway
       const qrChanged = current.whatsapp_qr && current.whatsapp_qr !== lastSyncedQr;
       const connChanged = current.whatsapp_connected !== lastSyncedConnected;
 
